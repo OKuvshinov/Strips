@@ -63,4 +63,5 @@ public:
 	CEdit CurrAnglePos;
 	CComboBox Regime;
 	CSliderCtrl ScaleOfOval;
+	CComboBox NetType;
 };
