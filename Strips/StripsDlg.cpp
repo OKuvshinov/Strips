@@ -116,7 +116,7 @@ double h = 0; // для прямоугольных
 double l = 1; // дял правильных многоугольников
 
 
-int SliderLimit = 2; // диапазон для слайдеров X и Y
+int SliderLimit = 20; // диапазон для слайдеров X и Y
 
 CString TextForCtrl = _T("");
 
@@ -201,6 +201,9 @@ void CStripsDlg::OnSysCommand(UINT nID, LPARAM lParam)
 //  this is automatically done for you by the framework.
 
 std::vector<Paths> Net(1);
+
+std::vector<Paths> NetRotated(1);
+
 std::vector<Path> OvalKassini(1); // изначальный в начале координат. На его основании поворачиваем и двигаем
 std::vector<Path> RotatedAndMovedOvalKassini(1);
 std::vector<Paths> Intersections(1);
@@ -257,13 +260,13 @@ void CStripsDlg::OnPaint()
 		{
 			StructureForDrawPaths = make_structure_for_draw(StructureForDrawPaths, Net);
 			for (int i = 0; i < Net[0].size(); i++) {
-				if (Areas[i] > 0) {
+				//if (Areas[i] > 0) {
 					//dc.Polygon(StructureForDrawPaths[i], Net[0][i].size());
 					for (int j = 0; j < Net[0][i].size() - 1; j++) {
 						dc.MoveTo(StructureForDrawPaths[i][j]);
 						dc.LineTo(StructureForDrawPaths[i][j + 1]);
 					}
-				}
+				//}
 			}
 		}
 
@@ -344,6 +347,7 @@ double YOvalMax = 0; // крайние точки СМЕЩЕННОГО овал�
 double XOvalMin = 0; // крайние точки СМЕЩЕННОГО овала Кассини. Для построения оптимальной сетки
 double YOvalMin = 0; // крайние точки СМЕЩЕННОГО овала Кассини. Для построения оптимальной сетки
 
+int SliderCoreff = 1; // коэффициент для настройки диапазона слайдера. 1 - для кругов, 2 - дял квадратов
 
 void CStripsDlg::add_oval()
 {
@@ -379,10 +383,10 @@ void CStripsDlg::add_oval()
 
 	for (int i = 0; i < OvalKassini[0].size(); i++) {
 		x_current = (OvalKassini[0][i].X * cos(AngleRotation.GetPos()*(PI / 180)) - OvalKassini[0][i].Y * sin(AngleRotation.GetPos()*(PI / 180))) +
-			(XPosition.GetPos() * scale_helper / (2 * SliderLimit));
+			(XPosition.GetPos() * scale_helper / (SliderCoreff * SliderLimit));
 
 		y_current = (OvalKassini[0][i].X * sin(AngleRotation.GetPos()*(PI / 180)) + OvalKassini[0][i].Y * cos(AngleRotation.GetPos()*(PI / 180))) +
-			(YPosition.GetPos() * scale_helper / (2 * SliderLimit));
+			(YPosition.GetPos() * scale_helper / (SliderCoreff * SliderLimit));
 
 		RotatedAndMovedOvalKassini[0] << IntPoint(x_current, y_current);
 
@@ -403,10 +407,10 @@ void CStripsDlg::add_oval()
 		}
 	}
 
-	TextForCtrl.Format(_T("%.2f"), double(XPosition.GetPos()) / (2 * SliderLimit));
+	TextForCtrl.Format(_T("%.2f"), double(XPosition.GetPos()) / (SliderCoreff * SliderLimit));
 	CurrXPos.SetWindowTextW(TextForCtrl);
 
-	TextForCtrl.Format(_T("%.2f"), double(YPosition.GetPos()) / (2 * SliderLimit));
+	TextForCtrl.Format(_T("%.2f"), double(YPosition.GetPos()) / (SliderCoreff * SliderLimit));
 	CurrYPos.SetWindowTextW(TextForCtrl);
 
 	TextForCtrl.Format(_T("%d"), AngleRotation.GetPos());
@@ -424,6 +428,8 @@ double end_y = 0;
 
 double step_x = 0;
 double step_y = 0;
+
+std::vector<Path> BlockRotated(1);
 
 
 void CStripsDlg::add_net()
@@ -486,7 +492,7 @@ void CStripsDlg::add_net()
 			end_x++;
 		}
 
-		init_y = init_y * sqrt(3) - 2 * sqrt(3) / 2;
+		init_y = init_y * sqrt(3) + 2 * sqrt(3) / 2; // * 0 делал при повороте сетки, можно убрать
 		end_y = end_y * sqrt(3) + 2 * sqrt(3) / 2;
 		//////////////////////////////////////////////////////////
 
@@ -499,7 +505,7 @@ void CStripsDlg::add_net()
 		int LineCounter = 0;
 		while (1)
 		{
-			if ((abs(y_current - end_y) > l*sqrt(3) / 2) && (y_current < end_y)) {
+			if ((abs(y_current - end_y) > 3*l*sqrt(3) / 2) && (y_current < end_y)) {
 				break;
 			}
 			add_block(x_current, y_current, step_x, 0);
@@ -516,9 +522,29 @@ void CStripsDlg::add_net()
 			}
 		}
 	}; break; // для шестиугольников
+	case 3: {
+		
+
+	}; break;
 	};
 
 	// TODO: Add your control notification handler code here
+
+
+
+	for (int i = 0; i < Net[0].size(); i++) {
+		BlockRotated[0].clear();
+		for (int j = 0; j < Net[0][i].size(); j++) {
+			BlockRotated[0] << IntPoint((Net[0][i][j].X * cos(-30 * (PI / 180)) - Net[0][i][j].Y * sin(-30 * (PI / 180))) +
+				((-20*sqrt(3)/2) * scale_helper / (SliderCoreff * SliderLimit)),
+				(Net[0][i][j].X * sin(-30 * (PI / 180)) + Net[0][i][j].Y * cos(-30 * (PI / 180))));
+		}
+		NetRotated[0].push_back(BlockRotated[0]);
+
+		Net[0][i] = NetRotated[0][i];
+		Net[0][i] = NetRotated[0][i];
+	}
+
 }
 
 std::vector<Path> Block(1);
@@ -569,10 +595,10 @@ void CStripsDlg::add_block(double init_value_x, double init_value_y, double step
 		}
 	}; break; // для шестиугольников
 	case 2: {
-		for (int i = 0; i < 360; i+=2) {
+		for (int i = 0; i < 360; i+=1) {
 			Block[0] << IntPoint((init_value_x + l * cos(i*PI / 180))*scale_helper, (init_value_y + l * sin(i*PI / 180))*scale_helper);
 		}
-	}; break;
+	}; break; // для кругов
 	}
 
 	Net[0].push_back(Block[0]);
@@ -698,6 +724,10 @@ void CStripsDlg::do_check_all_positions()
 				break;
 			}*/
 			YPosition.SetPos(j);
+			//if (sqrt(i * i + j * j) > SliderLimit)
+			//{
+			//	continue;
+			//}
 			for (int k = AngleRotation.GetRangeMin(); k <= 90; k += 1) {
 				//if (FoundOnAnEdge == true) {
 				//	MinXPos = XPosition.GetPos();
@@ -715,7 +745,7 @@ void CStripsDlg::do_check_all_positions()
 				case 0: {
 					find_haus_dist();
 
-					draw_everything();
+					//draw_everything();
 
 					if (HausDist < MinHausDist) {
 						MinHausDist = HausDist;
