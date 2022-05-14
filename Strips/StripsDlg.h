@@ -55,6 +55,10 @@ public:
 
 	std::vector<Path> do_intersectrion(std::vector<Paths> who_clip, int num_of_path, std::vector<Path> who_clipped);
 
+	std::vector<Path> do_intersectrion(std::vector<Path> who_clip, std::vector<Path> who_clipped);
+
+	double check_for_empty_ints(std::vector<Path> who_clip, std::vector<Path> who_clipped);
+
 	void set_slider(CSliderCtrl& slider, int position, int divide_position, CEdit& value);
 
 	afx_msg void do_check_all_positions();
@@ -64,4 +68,5 @@ public:
 	CComboBox Regime;
 	CSliderCtrl ScaleOfOval;
 	CComboBox NetType;
+	CButton do_ints;
 };

@@ -71,6 +71,7 @@ void CStripsDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_COMBO1, Regime);
 	DDX_Control(pDX, IDC_SLIDER4, ScaleOfOval);
 	DDX_Control(pDX, IDC_COMBO2, NetType);
+	DDX_Control(pDX, IDC_CHECK1, do_ints);
 }
 
 BEGIN_MESSAGE_MAP(CStripsDlg, CDialogEx)
@@ -116,7 +117,7 @@ double h = 0; // для прямоугольных
 double l = 1; // дял правильных многоугольников
 
 
-int SliderLimit = 20; // диапазон для слайдеров X и Y
+int SliderLimit = 5; // диапазон для слайдеров X и Y
 
 CString TextForCtrl = _T("");
 
@@ -168,9 +169,11 @@ BOOL CStripsDlg::OnInitDialog()
 
 		NetType.AddString(_T("1. Квадраты"));
 		NetType.AddString(_T("2. Шестиугольники"));
-		NetType.AddString(_T("3. Описанные окружности"));
-		NetType.SetCurSel(2); // задаем значение по умолчанию, чтобы сразу был выбран первый вариант (квадраты)
+		NetType.AddString(_T("3. Описанные окружности (6)"));
+		NetType.AddString(_T("4. Описанные окружности (4)"));
+		NetType.SetCurSel(3); // задаем значение по умолчанию, чтобы сразу был выбран первый вариант (квадраты)
 
+		do_ints.SetCheck(1);
 	}
 
 	// Set the icon for this dialog.  The framework does this automatically
@@ -260,13 +263,10 @@ void CStripsDlg::OnPaint()
 		{
 			StructureForDrawPaths = make_structure_for_draw(StructureForDrawPaths, Net);
 			for (int i = 0; i < Net[0].size(); i++) {
-				//if (Areas[i] > 0) {
-					//dc.Polygon(StructureForDrawPaths[i], Net[0][i].size());
-					for (int j = 0; j < Net[0][i].size() - 1; j++) {
-						dc.MoveTo(StructureForDrawPaths[i][j]);
-						dc.LineTo(StructureForDrawPaths[i][j + 1]);
-					}
-				//}
+				for (int j = 0; j < Net[0][i].size() - 1; j++) {
+					dc.MoveTo(StructureForDrawPaths[i][j]);
+					dc.LineTo(StructureForDrawPaths[i][j + 1]);
+				}
 			}
 		}
 
@@ -376,10 +376,11 @@ void CStripsDlg::add_oval()
 
 	RotatedAndMovedOvalKassini[0].clear();
 
-	XOvalMax = 0;
-	YOvalMax = 0;
 	XOvalMin = 0;
 	YOvalMin = 0;
+
+	XOvalMax = 0;
+	YOvalMax = 0;
 
 	for (int i = 0; i < OvalKassini[0].size(); i++) {
 		x_current = (OvalKassini[0][i].X * cos(AngleRotation.GetPos()*(PI / 180)) - OvalKassini[0][i].Y * sin(AngleRotation.GetPos()*(PI / 180))) +
@@ -390,7 +391,7 @@ void CStripsDlg::add_oval()
 
 		RotatedAndMovedOvalKassini[0] << IntPoint(x_current, y_current);
 
-		if (x_current > XOvalMax) { // знак "меньше" потому что значения меньше нуля
+		if (x_current > XOvalMax) {
 			XOvalMax = x_current;
 		}
 
@@ -398,7 +399,7 @@ void CStripsDlg::add_oval()
 			YOvalMax = y_current;
 		}
 
-		if (x_current < XOvalMin) { // знак "меньше" потому что значения меньше нуля
+		if (x_current < XOvalMin) {
 			XOvalMin = x_current;
 		}
 
@@ -421,9 +422,9 @@ void CStripsDlg::add_oval()
 
 // создаем сетку
 
-int init_x = 0;
+double init_x = 0;
 double init_y = 0;
-int end_x = 0;
+double end_x = 0;
 double end_y = 0;
 
 double step_x = 0;
@@ -435,6 +436,9 @@ std::vector<Path> BlockRotated(1);
 void CStripsDlg::add_net()
 {
 	Net[0].clear();
+	Areas.clear();
+
+	Intersections[0].clear();
 
 	// значения ниже обозначают ЦЕЛОЧИСЛЕННЫЕ координаты углов ПРЯМОУГОЛЬНИКА, в который полностью гарантировано
 	// упаковывается исходное множество (овал Кассини)
@@ -455,6 +459,13 @@ void CStripsDlg::add_net()
 		//w = l * 1.5; // шаг по горизонтали
 		//h = l * sqrt(3) / 2; // шаг по вериткали
 	}; break; // шестиугольник с длиной стороны l (по умолчанию l = 1)
+	case 2: {
+
+	}; break;
+	case 3: {
+		w = sqrt(2);
+		h = sqrt(2);
+	}; break;
 	}
 
 	// начинаем рисовать сетку из верхнего левого угла (двигаемся вправо и вниз). Начало координат в середине окна
@@ -487,10 +498,10 @@ void CStripsDlg::add_net()
 		/////////////////// выравнивание ///////////////////////
 		//нужно, чтобы сетка была неподвижна относительно овала
 
-		while (init_x % int(3*l) != 0) { // при таком подходе надо, чтобы l было всегда целое!!!
-			init_x--;
-			end_x++;
-		}
+		//while (init_x % int(3*l) != 0) { // при таком подходе надо, чтобы l было всегда целое!!!
+		//	init_x--;
+		//	end_x++;
+		//}
 
 		init_y = init_y * sqrt(3) + 2 * sqrt(3) / 2; // * 0 делал при повороте сетки, можно убрать
 		end_y = end_y * sqrt(3) + 2 * sqrt(3) / 2;
@@ -523,48 +534,81 @@ void CStripsDlg::add_net()
 		}
 	}; break; // для шестиугольников
 	case 3: {
-		
 
+		step_x = w;
+		step_y = h;
+
+		init_x = 0;
+		init_y = 0;
+		end_x = 0;
+		end_y = 0;
+
+		while (init_x + w + 0.1 > XOvalMin / scale_helper)
+		{
+			init_x -= w;
+		}
+		while (init_y + h + 0.1 > YOvalMin / scale_helper)
+		{
+			init_y -= h;
+		}
+		while (end_x - w - 0.1 < XOvalMax / scale_helper)
+		{
+			end_x += w;
+		}
+		while (end_y - h - 0.1 < YOvalMax / scale_helper)
+		{
+			end_y += h;
+		}
+
+		// координаты начала отрисовки текущего блока
+		x_current = init_x; // используем те же промежуточные переменные current
+		y_current = init_y;
+
+		while (y_current < end_y)
+		{
+			add_block(x_current, y_current, step_x, step_y);
+			x_current += step_x;
+			if (x_current > end_x)
+			{
+				x_current = init_x;
+				y_current += step_y;
+			}
+		}
 	}; break;
 	};
 
+	//for (int i = 0; i < Net[0].size(); i++) {
+	//	BlockRotated[0].clear();
+	//	for (int j = 0; j < Net[0][i].size(); j++) {
+	//		BlockRotated[0] << IntPoint((Net[0][i][j].X * cos(-30 * (PI / 180)) - Net[0][i][j].Y * sin(-30 * (PI / 180))) +
+	//			((-20*sqrt(3)/2) * scale_helper / (SliderCoreff * SliderLimit)),
+	//			(Net[0][i][j].X * sin(-30 * (PI / 180)) + Net[0][i][j].Y * cos(-30 * (PI / 180))));
+	//	}
+	//	NetRotated[0].push_back(BlockRotated[0]);
+
+	//	Net[0][i] = NetRotated[0][i];
+	//	Net[0][i] = NetRotated[0][i];
+	//}
+
+
 	// TODO: Add your control notification handler code here
-
-
-
-	for (int i = 0; i < Net[0].size(); i++) {
-		BlockRotated[0].clear();
-		for (int j = 0; j < Net[0][i].size(); j++) {
-			BlockRotated[0] << IntPoint((Net[0][i][j].X * cos(-30 * (PI / 180)) - Net[0][i][j].Y * sin(-30 * (PI / 180))) +
-				((-20*sqrt(3)/2) * scale_helper / (SliderCoreff * SliderLimit)),
-				(Net[0][i][j].X * sin(-30 * (PI / 180)) + Net[0][i][j].Y * cos(-30 * (PI / 180))));
-		}
-		NetRotated[0].push_back(BlockRotated[0]);
-
-		Net[0][i] = NetRotated[0][i];
-		Net[0][i] = NetRotated[0][i];
-	}
-
 }
 
 std::vector<Path> Block(1);
 
-
-
 int DotsOnEdge = 0; // число точек на грани блкоа сетки
-
-
 
 // создание отдельного блока для сетки
 void CStripsDlg::add_block(double init_value_x, double init_value_y, double step_value_x, double step_value_y)
 {
 	Block[0].clear();
+	CurrentIntersection.clear();
 
 	switch (NetType.GetCurSel())
 	{
 	case 0: {
 		// по часовой стрелке с левого верхнего угла
-	
+
 		// верхняя линия
 		Block[0] << IntPoint(init_value_x * scale_helper, init_value_y * scale_helper);
 		for (int i = 1; i < DotsOnEdge + 1; i++) {
@@ -590,47 +634,41 @@ void CStripsDlg::add_block(double init_value_x, double init_value_y, double step
 		}
 	}; break; // для квадратов
 	case 1: {
-		for (int i = 0; i < 360; i+=60) {
-			Block[0] << IntPoint((init_value_x + l*cos(i*PI / 180))*scale_helper, (init_value_y + l*sin(i*PI / 180))*scale_helper);
+		for (int i = 0; i < 360; i += 60) {
+			Block[0] << IntPoint((init_value_x + l * cos(i*PI / 180))*scale_helper, (init_value_y + l * sin(i*PI / 180))*scale_helper);
 		}
 	}; break; // для шестиугольников
 	case 2: {
-		for (int i = 0; i < 360; i+=1) {
+		for (int i = 0; i < 360; i += 1) {
 			Block[0] << IntPoint((init_value_x + l * cos(i*PI / 180))*scale_helper, (init_value_y + l * sin(i*PI / 180))*scale_helper);
 		}
 	}; break; // для кругов
+	case 3: {
+		for (int i = 0; i < 360; i += 1) {
+			Block[0] << IntPoint((init_value_x + 0 / double(2) + cos(i * PI / 180)) * scale_helper, (init_value_y + 0 / double(2) + sin(i * PI / 180)) * scale_helper);
+		}
+	}; break;
+	};
+
+	if (do_ints.GetState() == 1)
+	{
+		CurrentIntersection = do_intersectrion(Block, RotatedAndMovedOvalKassini);
+		if (CurrentIntersection.size() > 0)
+		{
+			Intersections[0].push_back(CurrentIntersection[0]);
+			Areas.push_back(Area(CurrentIntersection[0]) / pow(scale_helper, 2));
+			Net[0].push_back(Block[0]);
+		}
 	}
-
-	Net[0].push_back(Block[0]);
+	else
+	{
+		Net[0].push_back(Block[0]);
+	}
 }
-
-int CoveredBlocksCounter = 0; // считаем, сколько блоков покрывают частично или полностью овал Кассини
 
 // пересекаем овал Кассини и сетку
 void CStripsDlg::add_intersec_oval_and_net()
 {
-	Areas.clear();
-	CoveredBlocksCounter = 0;
-
-	Intersections[0].clear();
-
-	for (int i = 0; i < Net[0].size(); i++) { // i - отдельный блок сетки 
-		CurrentIntersection = do_intersectrion(Net, i, RotatedAndMovedOvalKassini); // пересекли
-
-		// проверяем результат пересечения
-		if (CurrentIntersection.size() > 0) {
-			CoveredBlocksCounter++;
-			Intersections[0].push_back(CurrentIntersection[0]);
-			Areas.push_back(Area(CurrentIntersection[0]) / pow(scale_helper, 2));
-		}
-		else {
-			Areas.push_back(0);
-		}
-	}
-
-	TextForCtrl.Format(_T("%d"), CoveredBlocksCounter);
-	NumOfCoveredBlocks.SetWindowTextW(TextForCtrl);
-
 	// TODO: Add your control notification handler code here
 }
 
@@ -645,6 +683,7 @@ std::vector<Path> CheckedDots(1);
 // считаем Хаусдорфово расстояние
 void CStripsDlg::find_haus_dist()
 {
+
 	double BlockArea = abs(Area(Net[0][0])) / (scale_helper * scale_helper); // площадь одной клетки сетки
 
 	CheckedDots[0].clear();
@@ -656,7 +695,7 @@ void CStripsDlg::find_haus_dist()
 	// здесь мы теряем привязанность точек к конкретному блоку, но она нам и не сильно нужна.
 
 	for (int i = 0; i < Areas.size(); i++) { // i - это блоки сетки
-		if ((Areas[i] != 0) && (Areas[i] != BlockArea)) { // 0 - не пересекается, BlockArea - лежит внутри овала Кассини
+		if (Areas[i] != BlockArea) { // 0 - не пересекается, BlockArea - лежит внутри овала Кассини
 
 			DotsOfCurrBlock = make_polys_for_dots(Net[0], i, CheckedDots); // превратили точки в маааленькие треугольники
 
@@ -674,6 +713,7 @@ void CStripsDlg::find_haus_dist()
 					AllDots[0].push_back(DotsOfCurrBlock[0][j]);
 
 					CurrHausDist = count_nearest_distance(DotsOfCurrBlock, j, 0);
+
 					if (CurrHausDist > HausDist) {
 						HausDist = CurrHausDist; // узнали расстояние
 						XHaus = DotsOfCurrBlock[0][j][0].X;
@@ -701,9 +741,12 @@ void CStripsDlg::find_haus_dist()
 	// TODO: Add your control notification handler code here
 }
 
+
 // ищем минмальное Хаусдорфово расстояние
 void CStripsDlg::do_check_all_positions()
 {
+	do_ints.SetCheck(1);
+
 	double MinHausDist = 20;
 	int count = 0;
 
@@ -745,7 +788,7 @@ void CStripsDlg::do_check_all_positions()
 				case 0: {
 					find_haus_dist();
 
-					//draw_everything();
+					draw_everything();
 
 					if (HausDist < MinHausDist) {
 						MinHausDist = HausDist;
@@ -757,8 +800,8 @@ void CStripsDlg::do_check_all_positions()
 				}; break;
 				case 1:
 				{
-					if (CoveredBlocksCounter < NumOfBlocks) {
-						NumOfBlocks = CoveredBlocksCounter;
+					if (Net[0].size() < NumOfBlocks) {
+						NumOfBlocks = Net[0].size();
 
 						MinXPos = XPosition.GetPos();
 						MinYPos = YPosition.GetPos();
@@ -826,6 +869,31 @@ std::vector<Path> CStripsDlg::do_intersectrion(std::vector<Paths> who_clip, int 
 	cp.Execute(ctIntersection, CurrInts, pftNonZero, pftNonZero);
 
 	return CurrInts;
+}
+
+std::vector<Path> CStripsDlg::do_intersectrion(std::vector<Path> who_clip, std::vector<Path> who_clipped)
+{
+
+	cp.Clear();
+	CurrInts.clear();
+
+	cp.AddPath(who_clip[0], ptSubject, true);
+	cp.AddPath(who_clipped[0], ptClip, true);
+	cp.Execute(ctIntersection, CurrInts, pftNonZero, pftNonZero);
+
+	return CurrInts;
+}
+
+double CStripsDlg::check_for_empty_ints(std::vector<Path> who_clip, std::vector<Path> who_clipped)
+{	
+	if (do_intersectrion(who_clip, who_clipped).size() > 0)
+	{
+		return Area(do_intersectrion(who_clip, who_clipped)[0]);
+	}
+	else
+	{
+		return 0;
+	}
 }
 
 // реагируем на движение слайдера
