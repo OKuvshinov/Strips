@@ -57,13 +57,19 @@ public:
 
 	std::vector<Path> do_intersectrion(std::vector<Path> who_clip, std::vector<Path> who_clipped);
 
+	std::vector<Path> do_xor(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped);
+
+	std::vector<Path> do_union(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped);
+
 	double check_for_empty_ints(std::vector<Path> who_clip, std::vector<Path> who_clipped);
 
 	void CStripsDlg::rotate_and_move_oval();
 
-	void CStripsDlg::rotate_and_move_net(double Angle, double ref_x, double ref_y);
+	void CStripsDlg::rotate_and_move_net(double init_value_x, double init_value_y, double ref_x, double ref_y, double Angle);
 
 	void set_slider(CSliderCtrl& slider, int position, int divide_position, CEdit& value);
+
+	void remove_excess_blocks();
 
 	afx_msg void do_check_all_positions();
 	CEdit CurrXPos;
