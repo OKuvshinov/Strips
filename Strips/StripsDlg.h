@@ -59,7 +59,7 @@ public:
 
 	std::vector<Path> do_xor(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped);
 
-	std::vector<Path> do_union(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped);
+	std::vector<Path> do_union(std::vector<Paths> who_clip, int num_of_path, std::vector<Path> who_clipped);
 
 	double check_for_empty_ints(std::vector<Path> who_clip, std::vector<Path> who_clipped);
 
@@ -70,6 +70,14 @@ public:
 	void set_slider(CSliderCtrl& slider, int position, int divide_position, CEdit& value);
 
 	void remove_excess_blocks();
+
+	void set_analysing_points(); // точки, для которых будем считать расстояние хаусдорфа
+
+	void crossed_dots_nearest_blocks(); // информация про тчоки пересечения и ближайшие блоки до них
+
+	void analysis_and_remove_excess_blocks(); // удаляем лишние блоки
+
+	void prepare_points_to_find_Haus(); // очень важная функция. Отбирает только снешние точки кругов массива CoveredNet
 
 	afx_msg void do_check_all_positions();
 	CEdit CurrXPos;
@@ -89,4 +97,6 @@ public:
 	afx_msg void OnBnClickedCheck4();
 	afx_msg void OnBnClickedCheck5();
 	afx_msg void OnBnClickedCheck6();
+	CButton EnableOptionDraw;
+	afx_msg void OnBnClickedCheck7();
 };

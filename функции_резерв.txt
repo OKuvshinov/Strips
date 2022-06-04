@@ -1,0 +1,93 @@
+	for (int i = 0; i < CrossedDots[0].size(); i++)
+	{
+		if (CrossedDots[0][i].size() > 0) {
+			for (int j = 0; j < CrossedDots[0][i].size() - 1; j++)
+			{
+				for (int k = j + 1; k < CrossedDots[0][i].size(); k++)
+				{
+					if (CrossedDots[0][i][j] == CrossedDots[0][i][k]) {
+						int ppp = 0;
+					}
+				}
+			}
+		}
+	}
+
+//////////
+
+		for(int i = 0; i < CrossedBlocksInfo.size() - 1; i++)
+	{
+		for (int j = i + 1; j < i + CrossedDots[0][CrossedBlocksInfo[i].BlockID].size(); j++)
+		{
+			if ((CrossedBlocksInfo[i].BlockID == CrossedBlocksInfo[j].BlockID) && (CrossedBlocksInfo[i].NearestID == CrossedBlocksInfo[j].NearestID)
+				&& (CrossedDots[0][CrossedBlocksInfo[i].BlockID].size() == 2) && !(abs(PointInPolygon(CentersOfCoveredBlocks[CrossedBlocksInfo[i].BlockID], RotatedAndMovedOvalKassini[0]))))
+			{
+				NumToDelete.push_back(CrossedBlocksInfo[i].BlockID);
+			}
+		}
+	}
+
+
+//////////////////
+
+void CStripsDlg::find_haus_dist()
+{
+	//BlockArea = abs(Area(Net[0][0])) / (scale_helper * scale_helper); // площадь одной клетки сетки
+
+	CheckedDots[0].clear();
+	AllDots[0].clear();
+
+	// дл€ начала надо определить, лежит ли точка блока сетки в овале  ассини. ƒл€ этого преобразуем точки в маааленький треугольник
+	// и пересечем с овалом  ассини
+
+	// здесь мы тер€ем прив€занность точек к конкретному блоку, но она нам и не сильно нужна.
+	
+	//for (int i = 0; i < Areas.size(); i++) { // i - это блоки сетки
+	for (int i = 0; i < CoveredNet[0].size(); i++) { // i - это блоки сетки
+		if (int(CoveredsAreas[i] * 100) != int(BlockArea * 100)) // 0 - не пересекаетс€, BlockArea - лежит внутри овала  ассини
+																 // аккуратно округл€ем до двух знаков после зап€той
+																 // а то площадь круга везде разна€!
+		{
+			DotsOfCurrBlock = make_polys_for_dots(CoveredNet[0], i, CheckedDots); // превратили точки в маааленькие треугольники
+
+			// провер€ем, лежит ли маааленький треугольик в овале  ассини. ≈сли лежит, то мы его игнорируем
+			for (int j = 0; j < DotsOfCurrBlock[0].size(); j++) { // j - это точки частично покрывающего блока
+				CurrentIntersection = do_intersectrion(DotsOfCurrBlock, j, RotatedAndMovedOvalKassini);
+
+				if (CurrentIntersection.size() == 0 || ((CurrentIntersection.size() > 0) && // если мааленький лежит снаружи
+						(abs(Area(CurrentIntersection[0])) < abs(Area(DotsOfCurrBlock[0][0]))))) { // или касаетс€ частично овала  ассини (что бывает ооочень редко)
+
+					// добавим точку в реестр провер€емых точек
+					// воспользуемс€ тем, что сама€ перва€ точка в мааленьком треугольнике точно сверху
+					CheckedDots[0] << IntPoint(DotsOfCurrBlock[0][j][0].X, DotsOfCurrBlock[0][j][0].Y + (0.01 * scale_helper));
+
+					AllDots[0].push_back(DotsOfCurrBlock[0][j]);
+
+					CurrHausDist = count_nearest_distance(DotsOfCurrBlock, j, 0);
+
+					if (CurrHausDist > HausDist) {
+						HausDist = CurrHausDist; // узнали рассто€ние
+						XHaus = DotsOfCurrBlock[0][j][0].X;
+						YHaus = DotsOfCurrBlock[0][j][0].Y + (0.01 * scale_helper);
+
+						XOvalHaus = XOvalHausPrev;
+						YOvalHaus = YOvalHausPrev;
+					}
+				}
+			}
+		}
+	}
+	HausDist /= scale_helper;
+
+	//if ((XHaus % 1000 != 0) || (YHaus % 1000 != 0)) {
+	//	CountOfAnEdge++;
+	//	if (CountOfAnEdge == 1) {
+	//		FoundOnAnEdge = true;
+	//	}
+	//}
+
+	TextForCtrl.Format(_T("%.4f"), (HausDist / scale_2) * 5);
+	HausdorffDistance.SetWindowTextW(TextForCtrl);
+
+	// TODO: Add your control notification handler code here
+}

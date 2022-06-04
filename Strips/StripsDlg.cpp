@@ -1,5 +1,4 @@
-﻿
-// StripsDlg.cpp : implementation file
+﻿// StripsDlg.cpp : implementation file
 //
 
 #include "pch.h"
@@ -77,6 +76,7 @@ void CStripsDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CHECK4, EnableDrawInts);
 	DDX_Control(pDX, IDC_CHECK5, EnableDrawDots);
 	DDX_Control(pDX, IDC_CHECK6, EnableDrawHausDot);
+	DDX_Control(pDX, IDC_CHECK7, EnableOptionDraw);
 }
 
 BEGIN_MESSAGE_MAP(CStripsDlg, CDialogEx)
@@ -95,6 +95,7 @@ BEGIN_MESSAGE_MAP(CStripsDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_CHECK4, &CStripsDlg::OnBnClickedCheck4)
 	ON_BN_CLICKED(IDC_CHECK5, &CStripsDlg::OnBnClickedCheck5)
 	ON_BN_CLICKED(IDC_CHECK6, &CStripsDlg::OnBnClickedCheck6)
+	ON_BN_CLICKED(IDC_CHECK7, &CStripsDlg::OnBnClickedCheck7)
 END_MESSAGE_MAP()
 
 
@@ -129,7 +130,8 @@ double h = 0; // шаг между центрами соседних блоко�
 double l = 1; // длина стороны правильного многоугольника блока
 
 
-int SliderLimit = 40; // диапазон для слайдеров X и Y
+int SliderLimit = 5; // диапазон для слайдеров X и Y
+int AngleSliderCoef = 1;
 
 CString TextForCtrl = _T("");
 
@@ -173,8 +175,8 @@ BOOL CStripsDlg::OnInitDialog()
 		YPosition.SetRange(-SliderLimit, SliderLimit, 1);
 		YPosition.SetPos(0);
 
-		AngleRotation.SetRange(0, 360*2, 1);
-		AngleRotation.SetPos(0);
+		AngleRotation.SetRange(0, 360 * AngleSliderCoef, 1);
+		AngleRotation.SetPos(51);
 
 		Regime.AddString(_T("1. Хаусдорфово расстояние"));
 		Regime.AddString(_T("2. Число блоков"));
@@ -244,6 +246,8 @@ std::vector<Path> Block(1);
 std::vector<IntPoint> CentersOfBlocks;
 std::vector<IntPoint> CentersOfCoveredBlocks;
 
+std::vector<Path> CurrentResult(1);
+
 int DotsOnEdge = 0; // число точек на грани блкоа сетки
 
 // чтобы рисовать объекты типа Clipperlib::vector<Path> их надо превартить в структуры типа POINT
@@ -267,6 +271,8 @@ int YOvalHaus = 0; // точка на овале Кассини, соответ�
 // площади пересечения элементов сетки и овала Кассини (size = Net[0].size())
 vector<double> Areas;
 vector<double> CoveredsAreas;
+
+std::vector<Paths> CheckedDots_new(1);
 
 void CStripsDlg::OnPaint()
 {
@@ -375,6 +381,37 @@ void CStripsDlg::OnPaint()
 		//		}
 		//	}
 		//}
+
+		if (EnableOptionDraw.GetCheck() == 1)
+		{
+			dc.SelectObject(greenpen);
+			if (CurrentResult[0].size() > 0)
+			{
+				StructureForDrawPath = make_structure_for_draw(StructureForDrawPath, CurrentResult);
+				dc.Polyline(StructureForDrawPath, CurrentResult[0].size());
+			}
+			//for (int i = 0; i < CurrentResult[0].size(); i++)
+			//{
+			//	dc.Ellipse(window_center_x + (scale * CurrentResult[0][i].X / scale_helper) - 3,
+			//		window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) - 3,
+			//		window_center_x + (scale * CurrentResult[0][i].X / scale_helper) + 3,
+			//		window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) + 3);					
+			//}
+			//Sleep(100);
+
+			//if (CheckedDots_new[0].size() > 0)
+			//{
+			//	StructureForDrawPaths = make_structure_for_draw(StructureForDrawPaths, CheckedDots_new);
+			//	for (int i = 0; i < CheckedDots_new[0].size(); i++) {
+			//		for (int j = 0; j < CheckedDots_new[0][i].size(); j++) {
+			//			dc.Ellipse(window_center_x + (scale * CheckedDots_new[0][i][j].X / scale_helper) - 3,
+			//				window_center_y - (scale * CheckedDots_new[0][i][j].Y / scale_helper) - 3,
+			//				window_center_x + (scale * CheckedDots_new[0][i][j].X / scale_helper) + 3,
+			//				window_center_y - (scale * CheckedDots_new[0][i][j].Y / scale_helper) + 3);
+			//		}
+			//	}
+			//}
+		}
 	}
 }
 
@@ -391,7 +428,7 @@ double x_current = 0; // текущие значения точек в запо�
 double y_current = 0; // текущие значения точек в заполнении различных массивов
 
 // создаем овал Кассини
-double a = 1.1 * scale_2; // параметры овала Кассини. "Играемся" масштабом
+double a = 1.002 * scale_2; // параметры овала Кассини. "Играемся" масштабом
 double c = 1 * scale_2;
 double xC = sqrt(a * a + c * c);
 double yA = (a * a) / (2 * c);
@@ -496,7 +533,7 @@ void CStripsDlg::rotate_and_move_oval()
 	TextForCtrl.Format(_T("%.3f"), double(YPosition.GetPos()) / (SliderCoreff * SliderLimit));
 	CurrYPos.SetWindowTextW(TextForCtrl);
 
-	TextForCtrl.Format(_T("%.1f"), double(AngleRotation.GetPos())/2);
+	TextForCtrl.Format(_T("%.1f"), double(AngleRotation.GetPos()) / AngleSliderCoef);
 	CurrAnglePos.SetWindowTextW(TextForCtrl);
 }
 
@@ -775,64 +812,48 @@ int CountOfAnEdge = 0;
 
 std::vector<Path> CheckedDots(1);
 
-
-
 // считаем Хаусдорфово расстояние
 void CStripsDlg::find_haus_dist()
 {
-	//BlockArea = abs(Area(Net[0][0])) / (scale_helper * scale_helper); // площадь одной клетки сетки
+	double CurrentDistance;
+	double HausDistance = 0;
+	double CurrentNormalLength;
+	double MinNormalLength = 2 * scale_helper; // 2, потому что полной диаметр окружности - максимальное расстояние
 
-	CheckedDots[0].clear();
-	AllDots[0].clear();
+	prepare_points_to_find_Haus();
 
-	// для начала надо определить, лежит ли точка блока сетки в овале Кассини. Для этого преобразуем точки в маааленький треугольник
-	// и пересечем с овалом Кассини
-
-	// здесь мы теряем привязанность точек к конкретному блоку, но она нам и не сильно нужна.
-	
-	//for (int i = 0; i < Areas.size(); i++) { // i - это блоки сетки
-	for (int i = 0; i < CoveredNet[0].size(); i++) { // i - это блоки сетки
-		if (int(CoveredsAreas[i] * 100) != int(BlockArea * 100)) // 0 - не пересекается, BlockArea - лежит внутри овала Кассини
-																 // аккуратно округляем до двух знаков после запятой
-																 // а то площадь круга везде разная!
+	for (int i = 0; i < CurrentResult[0].size(); i++)
+	{
+		MinNormalLength = 2 * scale_helper;
+		for (int j = 0; j < RotatedAndMovedOvalKassini[0].size(); j++)
 		{
-			DotsOfCurrBlock = make_polys_for_dots(CoveredNet[0], i, CheckedDots); // превратили точки в маааленькие треугольники
+			CurrentNormalLength = sqrt(pow(CurrentResult[0][i].X - RotatedAndMovedOvalKassini[0][j].X, 2)
+				+ pow(CurrentResult[0][i].Y - RotatedAndMovedOvalKassini[0][j].Y, 2));
+			if (CurrentNormalLength < MinNormalLength)
+			{
+				MinNormalLength = CurrentNormalLength;
 
-			// проверяем, лежит ли маааленький треугольик в овале Кассини. Если лежит, то мы его игнорируем
-			for (int j = 0; j < DotsOfCurrBlock[0].size(); j++) { // j - это точки частично покрывающего блока
-				CurrentIntersection = do_intersectrion(DotsOfCurrBlock, j, RotatedAndMovedOvalKassini);
-
-				if (CurrentIntersection.size() == 0 || ((CurrentIntersection.size() > 0) && // если мааленький лежит снаружи
-						(abs(Area(CurrentIntersection[0])) < abs(Area(DotsOfCurrBlock[0][0]))))) { // или касается частично овала Кассини (что бывает ооочень редко)
-
-					// добавим точку в реестр проверяемых точек
-					// воспользуемся тем, что самая первая точка в мааленьком треугольнике точно сверху
-					CheckedDots[0] << IntPoint(DotsOfCurrBlock[0][j][0].X, DotsOfCurrBlock[0][j][0].Y + (0.01 * scale_helper));
-
-					AllDots[0].push_back(DotsOfCurrBlock[0][j]);
-
-					CurrHausDist = count_nearest_distance(DotsOfCurrBlock, j, 0);
-
-					if (CurrHausDist > HausDist) {
-						HausDist = CurrHausDist; // узнали расстояние
-						XHaus = DotsOfCurrBlock[0][j][0].X;
-						YHaus = DotsOfCurrBlock[0][j][0].Y + (0.01 * scale_helper);
-
-						XOvalHaus = XOvalHausPrev;
-						YOvalHaus = YOvalHausPrev;
-					}
-				}
+				XOvalHausPrev = RotatedAndMovedOvalKassini[0][j].X;
+				YOvalHausPrev = RotatedAndMovedOvalKassini[0][j].Y;
 			}
 		}
-	}
-	HausDist /= scale_helper;
 
-	//if ((XHaus % 1000 != 0) || (YHaus % 1000 != 0)) {
-	//	CountOfAnEdge++;
-	//	if (CountOfAnEdge == 1) {
-	//		FoundOnAnEdge = true;
-	//	}
-	//}
+		CurrentDistance = MinNormalLength; // строка и переменная лишние, но для лучшего понимания
+
+		if (CurrentDistance > HausDist)
+		{
+			HausDist = CurrentDistance;
+
+			XHaus = CurrentResult[0][i].X;
+			YHaus = CurrentResult[0][i].Y;
+
+			XOvalHaus = XOvalHausPrev;
+			YOvalHaus = YOvalHausPrev;
+
+		}
+	}
+
+	HausDist /= scale_helper;
 
 	TextForCtrl.Format(_T("%.4f"), (HausDist / scale_2) * 5);
 	HausdorffDistance.SetWindowTextW(TextForCtrl);
@@ -849,7 +870,7 @@ void CStripsDlg::do_check_all_positions()
 	double MinHausDist = 20;
 	int count = 0;
 
-	NumOfBlocks = 2 * ceil(xC) * 2 * ceil(yA);
+	NumOfBlocks = 80;
 
 	// зафиксируем, в каком случае достигается минимальное значение Хаусдорфова расстояния
 	int MinXPos = 0;
@@ -905,8 +926,8 @@ void CStripsDlg::do_check_all_positions()
 				{
 					//draw_everything();
 
-					if (Net[0].size() < NumOfBlocks) {
-						NumOfBlocks = Net[0].size();
+					if (CoveredNet[0].size() < NumOfBlocks) {
+						NumOfBlocks = CoveredNet[0].size();
 
 						MinXPos = XPosition.GetPos();
 						MinYPos = YPosition.GetPos();
@@ -1039,32 +1060,33 @@ double NativeDistance = 1 * scale_helper;
 //double CurrentDistance;
 typedef struct
 {
-	int NumOfBlock;
-	int NumOfDot;
-	int Nearest;
-} data_to_remove;
+	int BlockID; // номер покрывающего блока в массиве CoveredNet
+	int DotID; // номер точки пересечения с овалом Каасини
+	int NearestID; // номер ближайшего блока в массиве CoveredNet
+} InfoOFBlockCrossedOval;
 
-std::vector<data_to_remove> all_data; // X - num of crossed block, Y - num of nearest block
-data_to_remove CurrData;
-int DeleteCounter = 0;
-
-std::vector<Path> CurrDot(1);
-bool WeAreInside;
-
-std::vector<int> NumToDelete;
-
-IntPoint EmptyPoint(1);
+std::vector<InfoOFBlockCrossedOval> CrossedBlocksInfo;
 
 void CStripsDlg::remove_excess_blocks()
 {
-	CrossedDots[0].clear();
-	all_data.clear();
+	set_analysing_points();
+	crossed_dots_nearest_blocks();
+	analysis_and_remove_excess_blocks();
+}
 
-	NumToDelete.clear();
+void CStripsDlg::set_analysing_points()
+{
+	std::vector<Path> EmptyPath(1);
+	std::vector<Path> CurrentPoint(1);
+	bool WeAreInside;
+
+	CrossedDots[0].clear();
+	CheckedDots_new[0].clear();
 
 	for (int i = 0; i < CoveredNet[0].size(); i++)
 	{
-		CurrDot[0].clear();
+		CheckedDots_new[0].push_back(EmptyPath[0]);
+		CurrentPoint[0].clear();
 		if (int(CoveredsAreas[i] * 100 + 0.5) != int(BlockArea * 100))
 		{
 			for (int j = 0; j < CoveredNet[0][i].size(); j++)
@@ -1077,15 +1099,14 @@ void CStripsDlg::remove_excess_blocks()
 					}
 					if (!WeAreInside)
 					{
-						//CurrDot[0] << IntPoint(CoveredNet[0][i][j].X, CoveredNet[0][i][j - 1].Y);
-						if (j != 0) {
-							CurrDot[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][j - 1].X) / 2,
-								(CoveredNet[0][i][j].Y + CoveredNet[0][i][j - 1].Y) / 2);
+						if (j == 0) {
+							CurrentPoint[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][CoveredNet[0][i].size() - 1].X) / 2,
+								(CoveredNet[0][i][j].Y + CoveredNet[0][i][CoveredNet[0][i].size() - 1].Y) / 2);
 						}
 						else
 						{
-							CurrDot[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][CoveredNet[0][i].size() - 1].X) / 2,
-								(CoveredNet[0][i][j].Y + CoveredNet[0][i][CoveredNet[0][i].size() - 1].Y) / 2);
+							CurrentPoint[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][j - 1].X) / 2,
+								(CoveredNet[0][i][j].Y + CoveredNet[0][i][j - 1].Y) / 2);
 						}
 						WeAreInside = true;
 					}
@@ -1098,37 +1119,47 @@ void CStripsDlg::remove_excess_blocks()
 					}
 					if (WeAreInside)
 					{
-						//CurrDot[0] << IntPoint(CoveredNet[0][i][j - 1].X, CoveredNet[0][i][j - 1].Y);
-						if (j != 0) {
-							CurrDot[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][j - 1].X) / 2,
-								(CoveredNet[0][i][j].Y + CoveredNet[0][i][j - 1].Y) / 2);
+						if (j == 0) {
+							CurrentPoint[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][CoveredNet[0][i].size() - 1].X) / 2,
+								(CoveredNet[0][i][j].Y + CoveredNet[0][i][CoveredNet[0][i].size() - 1].Y) / 2);
 						}
 						else
 						{
-							CurrDot[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][CoveredNet[0][i].size() - 1].X) / 2,
-								(CoveredNet[0][i][j].Y + CoveredNet[0][i][CoveredNet[0][i].size() - 1].Y) / 2);
+							CurrentPoint[0] << IntPoint((CoveredNet[0][i][j].X + CoveredNet[0][i][j - 1].X) / 2,
+								(CoveredNet[0][i][j].Y + CoveredNet[0][i][j - 1].Y) / 2);
 						}
 						WeAreInside = false;
 					}
+
+					CheckedDots_new[0][i].push_back(CoveredNet[0][i][j]); // добавляем точку в реестр
+
 				}
 			}
 			if (((abs(PointInPolygon(CoveredNet[0][i][0], RotatedAndMovedOvalKassini[0]))) && !(WeAreInside)) || // на случай, если переход на
 				!(abs(PointInPolygon(CoveredNet[0][i][0], RotatedAndMovedOvalKassini[0]))) && (WeAreInside))	 // первой и последней точке блока
 			{
-				CurrDot[0] << IntPoint((CoveredNet[0][i][0].X + CoveredNet[0][i][CoveredNet[0][i].size() - 1].X) / 2,
+				CurrentPoint[0] << IntPoint((CoveredNet[0][i][0].X + CoveredNet[0][i][CoveredNet[0][i].size() - 1].X) / 2,
 					(CoveredNet[0][i][0].Y + CoveredNet[0][i][CoveredNet[0][i].size() - 1].Y) / 2);
 			}
-			if ((CurrDot[0].size() == 1) && !(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedOvalKassini[0])))) // костыль, но пока только так
-			{
-				NumToDelete.push_back(i);
-			}
+			//if ((CurrDot[0].size() == 1) && !(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedOvalKassini[0])))) // костыль, но пока только так
+			//{
+			//	NumToDelete.push_back(i);
+			//}
 		}
-		CrossedDots[0].push_back(CurrDot[0]);
+		CrossedDots[0].push_back(CurrentPoint[0]);
 	}
+}
+
+void CStripsDlg::crossed_dots_nearest_blocks()
+{
+	InfoOFBlockCrossedOval CurrentInfo;
+
+	CrossedBlocksInfo.clear();
 
 	for (int i = 0; i < CoveredNet[0].size(); i++)
 	{
-		if (CrossedDots[0][i].size() > 0) {
+		if (!(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedOvalKassini[0]))))
+		{
 			for (int j = 0; j < CrossedDots[0][i].size(); j++)
 			{
 				for (int k = 0; k < CentersOfCoveredBlocks.size(); k++)
@@ -1140,40 +1171,102 @@ void CStripsDlg::remove_excess_blocks()
 					CurrentDistance = sqrt(pow(CrossedDots[0][i][j].X - CentersOfCoveredBlocks[k].X, 2) + pow(CrossedDots[0][i][j].Y - CentersOfCoveredBlocks[k].Y, 2));
 					if (CurrentDistance < NativeDistance)
 					{
-						CurrData.NumOfBlock = i;
-						CurrData.NumOfDot = j;
-						CurrData.Nearest = k;
-						all_data.push_back(CurrData);
+						CurrentInfo.BlockID = i;
+						CurrentInfo.DotID = j;
+						CurrentInfo.NearestID = k;
+						CrossedBlocksInfo.push_back(CurrentInfo);
 					}
 				}
 			}
 		}
 	}
+}
 
-	for(int i = 0; i < all_data.size() - 1; i++)
+void CStripsDlg::analysis_and_remove_excess_blocks()
+{
+	int DeleteCounter = 0;
+	bool SuchAlreadyHere = false;
+
+	std::vector<int> DeleteBlock; // ID блока из массива CoveredNet, который нужно удалить из покрытия
+
+	for (int i = 0; i < CrossedBlocksInfo.size() - 1; i++)
 	{
-		for (int j = i + 1; j < all_data.size(); j++)
+		for (int j = i + 1; j < i + CrossedDots[0][CrossedBlocksInfo[i].BlockID].size(); j++)
 		{
-			if ((all_data[i].NumOfBlock == all_data[j].NumOfBlock) && (all_data[i].Nearest == all_data[j].Nearest)
-				&& (CrossedDots[0][all_data[i].NumOfBlock].size() == 2) && !(abs(PointInPolygon(CentersOfCoveredBlocks[all_data[i].NumOfBlock], RotatedAndMovedOvalKassini[0]))))
+			if ((CrossedBlocksInfo[i].BlockID == CrossedBlocksInfo[j].BlockID)
+					&& (CrossedBlocksInfo[i].NearestID == CrossedBlocksInfo[j].NearestID))
 			{
-				NumToDelete.push_back(all_data[i].NumOfBlock);
+				for (int k = 0; k < DeleteBlock.size(); k++)
+				{
+					if (DeleteBlock[k] == CrossedBlocksInfo[i].BlockID)
+					{
+						SuchAlreadyHere = true;
+						break;
+					}
+				}
+				if (SuchAlreadyHere)
+				{
+					SuchAlreadyHere = false;
+				}
+				else
+				{
+					DeleteBlock.push_back(CrossedBlocksInfo[i].BlockID);
+				}
 			}
 		}
 	}
 
-	DeleteCounter = 0;
-
-	sort(NumToDelete.begin(), NumToDelete.end());
-
-	for (int i = 0; i < NumToDelete.size(); i++)
+	for (int i = 0; i < DeleteBlock.size(); i++)
 	{
-		CoveredNet[0].erase(std::next(CoveredNet[0].begin(), NumToDelete[i] - DeleteCounter));
-		CoveredsAreas.erase(std::next(CoveredsAreas.begin(), NumToDelete[i] - DeleteCounter));
+		CoveredNet[0].erase(std::next(CoveredNet[0].begin(), DeleteBlock[i] - DeleteCounter));
+		CoveredsAreas.erase(std::next(CoveredsAreas.begin(), DeleteBlock[i] - DeleteCounter));
+		CheckedDots_new[0].erase(std::next(CheckedDots_new[0].begin(), DeleteBlock[i] - DeleteCounter));
+
 		DeleteCounter++;
 	}
+}
 
-	int t = 0;
+void CStripsDlg::prepare_points_to_find_Haus()
+{
+	std::vector<Path> CurrRes;
+	std::vector<int> RetryUnion;
+
+	CurrentResult[0].clear();
+	CurrentResult[0] = CoveredNet[0][0];
+
+	//int old = 0;
+
+	//for (int i = 0; i < CheckedDots_new[0].size(); i++)
+	//{
+	//	old += CheckedDots_new[0][i].size();
+	//}
+
+	for (int i = 1; i < CoveredNet[0].size(); i++)
+	{
+		CurrRes = do_union(CoveredNet, i, CurrentResult);
+		if (CurrRes.size() == 1)
+		{
+			CurrentResult[0] = CurrRes[0];
+		}
+		else
+		{
+			RetryUnion.push_back(i);
+		}
+		//CurrentResult[0] = do_union(CoveredNet, i, CurrentResult)[0];
+		//draw_everything();
+	}
+
+	for (int i = RetryUnion.size() - 1; i >= 0; i--)
+	{
+		CurrRes = do_union(CoveredNet, RetryUnion[i], CurrentResult);
+		if (CurrRes.size() == 1)
+		{
+			CurrentResult[0] = CurrRes[0];
+		}
+		//draw_everything();
+	}
+
+	//int New = CurrentResult[0].size();
 }
 
 std::vector<Path> CStripsDlg::do_xor(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped)
@@ -1188,16 +1281,16 @@ std::vector<Path> CStripsDlg::do_xor(std::vector<Path> who_clip, int num, std::v
 	return CurrXor;
 }
 
-std::vector<Path> CStripsDlg::do_union(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped)
+std::vector<Path> CStripsDlg::do_union(std::vector<Paths> who_clip, int num_of_path, std::vector<Path> who_clipped)
 {
-	cp.Clear();
-	CurrUnion.clear();
+	Clipper cp;
+	std::vector<Path> Result;
 
-	cp.AddPath(who_clip[num], ptSubject, true);
+	cp.AddPath(who_clip[0][num_of_path], ptSubject, true);
 	cp.AddPath(who_clipped[0], ptClip, true);
-	cp.Execute(ctIntersection, CurrUnion, pftNonZero, pftNonZero);
+	cp.Execute(ctUnion, Result, pftNonZero, pftNonZero);
 
-	return CurrUnion;	
+	return Result;
 }
 
 
@@ -1230,6 +1323,13 @@ void CStripsDlg::OnBnClickedCheck5()
 
 
 void CStripsDlg::OnBnClickedCheck6()
+{
+	draw_everything();
+	// TODO: Add your control notification handler code here
+}
+
+
+void CStripsDlg::OnBnClickedCheck7()
 {
 	draw_everything();
 	// TODO: Add your control notification handler code here
