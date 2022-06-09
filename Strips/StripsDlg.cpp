@@ -118,7 +118,7 @@ double scale_1 = 100;
 int scale = scale_1 / scale_2;
 
 // чтобы не потерять точность
-int scale_helper = 1000;
+int scale_helper = 100000;
 
 int window_center_x = 0;
 int window_center_y = 0;
@@ -170,13 +170,13 @@ BOOL CStripsDlg::OnInitDialog()
 		set_drawing_param(window_center_x, window_center_y, scale, scale_helper);
 
 		XPosition.SetRange(-SliderLimit, SliderLimit, 1);
-		XPosition.SetPos(0);
+		XPosition.SetPos(-4); //1
 
 		YPosition.SetRange(-SliderLimit, SliderLimit, 1);
-		YPosition.SetPos(0);
+		YPosition.SetPos(2); //5
 
 		AngleRotation.SetRange(0, 360 * AngleSliderCoef, 1);
-		AngleRotation.SetPos(51);
+		AngleRotation.SetPos(60); //53
 
 		Regime.AddString(_T("1. Хаусдорфово расстояние"));
 		Regime.AddString(_T("2. Число блоков"));
@@ -385,19 +385,19 @@ void CStripsDlg::OnPaint()
 		if (EnableOptionDraw.GetCheck() == 1)
 		{
 			dc.SelectObject(greenpen);
-			if (CurrentResult[0].size() > 0)
-			{
-				StructureForDrawPath = make_structure_for_draw(StructureForDrawPath, CurrentResult);
-				dc.Polyline(StructureForDrawPath, CurrentResult[0].size());
-			}
-			//for (int i = 0; i < CurrentResult[0].size(); i++)
+			//if (CurrentResult[0].size() > 0)
 			//{
-			//	dc.Ellipse(window_center_x + (scale * CurrentResult[0][i].X / scale_helper) - 3,
-			//		window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) - 3,
-			//		window_center_x + (scale * CurrentResult[0][i].X / scale_helper) + 3,
-			//		window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) + 3);					
+			//	StructureForDrawPath = make_structure_for_draw(StructureForDrawPath, CurrentResult);
+			//	dc.Polyline(StructureForDrawPath, CurrentResult[0].size());
 			//}
-			//Sleep(100);
+			for (int i = 0; i < CurrentResult[0].size(); i++)
+			{
+				dc.Ellipse(window_center_x + (scale * CurrentResult[0][i].X / scale_helper) - 3,
+					window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) - 3,
+					window_center_x + (scale * CurrentResult[0][i].X / scale_helper) + 3,
+					window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) + 3);					
+			}
+			Sleep(300);
 
 			//if (CheckedDots_new[0].size() > 0)
 			//{
@@ -557,6 +557,8 @@ double init_value_y_rotated;
 
 IntPoint center;
 
+double RadiusOfBlock = 2;
+
 void CStripsDlg::add_net()
 {
 	Net[0].clear();
@@ -576,12 +578,12 @@ void CStripsDlg::add_net()
 		h = l * sqrt(3) / 2;
 	}; break; // шестиугольник с длиной стороны l (по умолчанию l = 1)
 	case 2: {
-		w = l * 3;
-		h = l * sqrt(3) / 2;
+		w = RadiusOfBlock * 3;
+		h = RadiusOfBlock * sqrt(3) / 2;
 	}; break; // описанные круги вокруг шестиугольников
 	case 3: {
-		w = sqrt(2);
-		h = sqrt(2);
+		w = RadiusOfBlock * sqrt(2);
+		h = RadiusOfBlock * sqrt(2);
 	}; break; // описанные круги вокруг квадратов
 	}
 
@@ -635,7 +637,7 @@ void CStripsDlg::add_net()
 				LineCounter++;
 				if (LineCounter % 2 != 0)
 				{
-					x_current = init_x + 1.5 * l;
+					x_current = init_x + 1.5 * RadiusOfBlock;
 				}
 				else
 				{
@@ -651,12 +653,12 @@ void CStripsDlg::add_net()
 		{
 			add_block(x_current, y_current, step_x, step_y);
 			x_current += step_x;
-			if (x_current > end_x - 1)
+			if (x_current > end_x)
 			{
 				LineCounter++;
 				if (LineCounter % 2 != 0)
 				{
-					x_current = init_x + 1.5 * l;
+					x_current = init_x + 1.5 * RadiusOfBlock;
 				}
 				else
 				{
@@ -671,7 +673,7 @@ void CStripsDlg::add_net()
 		{
 			add_block(x_current, y_current, step_x, step_y);
 			x_current += step_x;
-			if (x_current > end_x - 1)
+			if (x_current > end_x)
 			{
 				x_current = init_x;
 				y_current += step_y;
@@ -729,12 +731,12 @@ void CStripsDlg::add_block(double init_value_x, double init_value_y, double step
 	}; break; // для шестиугольников
 	case 2: {
 		for (int i = 0; i < 360; i += 1) {
-			Block[0] << IntPoint((init_value_x + l * cos(i*PI / 180))*scale_helper, (init_value_y + l * sin(i*PI / 180))*scale_helper);
+			Block[0] << IntPoint((init_value_x + RadiusOfBlock * cos(i*PI / 180))*scale_helper, (init_value_y + RadiusOfBlock * sin(i*PI / 180))*scale_helper);
 		}
 	}; break; // для кругов
 	case 3: {
 		for (int i = 0; i < 360; i += 1) {
-			Block[0] << IntPoint((init_value_x + 0 / double(2) + cos(i * PI / 180)) * scale_helper, (init_value_y + 0 / double(2) + sin(i * PI / 180)) * scale_helper);
+			Block[0] << IntPoint((init_value_x + RadiusOfBlock * cos(i * PI / 180)) * scale_helper, (init_value_y + RadiusOfBlock * sin(i * PI / 180)) * scale_helper);
 		}
 	}; break;
 	};
@@ -818,13 +820,13 @@ void CStripsDlg::find_haus_dist()
 	double CurrentDistance;
 	double HausDistance = 0;
 	double CurrentNormalLength;
-	double MinNormalLength = 2 * scale_helper; // 2, потому что полной диаметр окружности - максимальное расстояние
+	double MinNormalLength = 2 * RadiusOfBlock * scale_helper; // 2, потому что полной диаметр окружности - максимальное расстояние
 
 	prepare_points_to_find_Haus();
 
 	for (int i = 0; i < CurrentResult[0].size(); i++)
 	{
-		MinNormalLength = 2 * scale_helper;
+		MinNormalLength = 2 * RadiusOfBlock * scale_helper;
 		for (int j = 0; j < RotatedAndMovedOvalKassini[0].size(); j++)
 		{
 			CurrentNormalLength = sqrt(pow(CurrentResult[0][i].X - RotatedAndMovedOvalKassini[0][j].X, 2)
@@ -1056,7 +1058,7 @@ void CStripsDlg::set_slider(CSliderCtrl& slider, int position, int divide_positi
 	value.SetWindowTextW(TextForCtrl);
 }
 
-double NativeDistance = 1 * scale_helper;
+double NativeDistance = RadiusOfBlock * scale_helper;
 //double CurrentDistance;
 typedef struct
 {
@@ -1160,6 +1162,10 @@ void CStripsDlg::crossed_dots_nearest_blocks()
 	{
 		if (!(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedOvalKassini[0]))))
 		{
+			if (i == 15)
+			{
+				int q = 0;
+			}
 			for (int j = 0; j < CrossedDots[0][i].size(); j++)
 			{
 				for (int k = 0; k < CentersOfCoveredBlocks.size(); k++)
@@ -1188,7 +1194,6 @@ void CStripsDlg::analysis_and_remove_excess_blocks()
 	bool SuchAlreadyHere = false;
 
 	std::vector<int> DeleteBlock; // ID блока из массива CoveredNet, который нужно удалить из покрытия
-
 	for (int i = 0; i < CrossedBlocksInfo.size() - 1; i++)
 	{
 		for (int j = i + 1; j < i + CrossedDots[0][CrossedBlocksInfo[i].BlockID].size(); j++)
@@ -1250,7 +1255,14 @@ void CStripsDlg::prepare_points_to_find_Haus()
 		}
 		else
 		{
-			RetryUnion.push_back(i);
+			if ((CurrRes.size() > 1) && (CurrRes[1].size() < 360))
+			{
+				CurrentResult[0] = CurrRes[0];
+			}
+			else
+			{
+				RetryUnion.push_back(i);
+			}
 		}
 		//CurrentResult[0] = do_union(CoveredNet, i, CurrentResult)[0];
 		//draw_everything();
@@ -1262,6 +1274,17 @@ void CStripsDlg::prepare_points_to_find_Haus()
 		if (CurrRes.size() == 1)
 		{
 			CurrentResult[0] = CurrRes[0];
+		}
+		else
+		{
+			if ((CurrRes.size() > 1) && (CurrRes[1].size() < 360))
+			{
+				CurrentResult[0] = CurrRes[0];
+			}
+			else
+			{
+				RetryUnion.push_back(i);
+			}
 		}
 		//draw_everything();
 	}
