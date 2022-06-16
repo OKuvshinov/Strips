@@ -79,6 +79,10 @@ public:
 
 	void prepare_points_to_find_Haus(); // очень важная функция. Отбирает только снешние точки кругов массива CoveredNet
 
+	void create_oval_cassini();
+
+	void create_square();
+
 	afx_msg void do_check_all_positions();
 	CEdit CurrXPos;
 	CEdit CurrYPos;
@@ -99,4 +103,5 @@ public:
 	afx_msg void OnBnClickedCheck6();
 	CButton EnableOptionDraw;
 	afx_msg void OnBnClickedCheck7();
+	CComboBox FigureType;
 };

@@ -77,6 +77,7 @@ void CStripsDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CHECK5, EnableDrawDots);
 	DDX_Control(pDX, IDC_CHECK6, EnableDrawHausDot);
 	DDX_Control(pDX, IDC_CHECK7, EnableOptionDraw);
+	DDX_Control(pDX, IDC_COMBO3, FigureType);
 }
 
 BEGIN_MESSAGE_MAP(CStripsDlg, CDialogEx)
@@ -108,7 +109,7 @@ std::vector<Path> CurrXor(1);
 std::vector<Path> CurrUnion(1);
 std::vector<Path> CurrentIntersection(1); // внешний промежуточный результат (для конкретной функции).
 											//Можно было бы и без него, но так код читабельнее
-
+double RadiusOfBlock = 1;
 CRect RedrawArea;
 
 // масштаб для рисования. Оптимальное значение - 20. Изменение сетки будем имитировать изменением размеров овала Кассини
@@ -170,13 +171,13 @@ BOOL CStripsDlg::OnInitDialog()
 		set_drawing_param(window_center_x, window_center_y, scale, scale_helper);
 
 		XPosition.SetRange(-SliderLimit, SliderLimit, 1);
-		XPosition.SetPos(-4); //1
+		XPosition.SetPos(0); //1
 
 		YPosition.SetRange(-SliderLimit, SliderLimit, 1);
-		YPosition.SetPos(2); //5
+		YPosition.SetPos(5); //5
 
 		AngleRotation.SetRange(0, 360 * AngleSliderCoef, 1);
-		AngleRotation.SetPos(60); //53
+		AngleRotation.SetPos(41); //53
 
 		Regime.AddString(_T("1. Хаусдорфово расстояние"));
 		Regime.AddString(_T("2. Число блоков"));
@@ -194,6 +195,10 @@ BOOL CStripsDlg::OnInitDialog()
 		EnableDrawInts.SetCheck(1);
 		EnableDrawDots.SetCheck(0);
 		EnableDrawHausDot.SetCheck(1);
+
+		FigureType.AddString(_T("1. Овал Кассини"));
+		FigureType.AddString(_T("2. Квадрат"));
+		FigureType.SetCurSel(1);
 	}
 
 	// Set the icon for this dialog.  The framework does this automatically
@@ -453,30 +458,44 @@ void CStripsDlg::add_oval()
 	XOvalMax = 0;
 	YOvalMax = 0;
 
-	for (x_current = -xC + 0.001; x_current <= xC; x_current += 0.1) {
-		y_current = sqrt(sqrt(a * a * a * a + 4 * c * c * x_current * x_current) - x_current * x_current - c * c);
+	OvalKassini[0].clear();
 
-		if (y_current >= 0) {
-			OvalKassini[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
-		}
-
-		if (x_current > XOvalMax) {
-			XOvalMax = x_current;
-		}
-
-		if (y_current > YOvalMax) {
-			YOvalMax = y_current;
-		}
-
-		if (x_current < XOvalMin) {
-			XOvalMin = x_current;
-		}
-
-		if (y_current < YOvalMin) {
-			YOvalMin = y_current;
-		}
-
+	switch (FigureType.GetCurSel())
+	{
+	case 0:
+	{
+		create_oval_cassini();
+	}; break;
+	case 1:
+	{
+		create_square();
 	}
+	}
+
+	//for (x_current = -xC + 0.001; x_current <= xC; x_current += 0.1) {
+	//	y_current = sqrt(sqrt(a * a * a * a + 4 * c * c * x_current * x_current) - x_current * x_current - c * c);
+
+	//	if (y_current >= 0) {
+	//		OvalKassini[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	//	}
+
+	//	if (x_current > XOvalMax) {
+	//		XOvalMax = x_current;
+	//	}
+
+	//	if (y_current > YOvalMax) {
+	//		YOvalMax = y_current;
+	//	}
+
+	//	if (x_current < XOvalMin) {
+	//		XOvalMin = x_current;
+	//	}
+
+	//	if (y_current < YOvalMin) {
+	//		YOvalMin = y_current;
+	//	}
+
+	//}
 
 	// добавим самую крайнюю точку, чтобы овал не срезался
 	x_current = xC - 0.001;
@@ -498,16 +517,49 @@ void CStripsDlg::add_oval()
 		YOvalMin = y_current;
 	}
 
-	OvalKassini[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	//OvalKassini[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
 
 	// рисуем нижнюю часть овала Кассини
-	for (int i = OvalKassini[0].size() - 1; i >= 0; i--) {
-		OvalKassini[0] << IntPoint(OvalKassini[0][i].X, -1 * OvalKassini[0][i].Y);
-	}
+	//for (int i = OvalKassini[0].size() - 1; i >= 0; i--) {
+	//	OvalKassini[0] << IntPoint(OvalKassini[0][i].X, -1 * OvalKassini[0][i].Y);
+	//}
 
 	rotate_and_move_oval();
 
 	// TODO: Add your control notification handler code here
+}
+
+void CStripsDlg::create_oval_cassini()
+{
+}
+
+void CStripsDlg::create_square()
+{
+	// (-3, 3) (3, 3) (3, -3) (-3, -3)
+
+	OvalKassini[0] << IntPoint(-3 * scale_helper, 3 * scale_helper);
+	for (double i = -3 + 6.0/100.0; i < 3; i += 6.0/100.0)
+	{
+		OvalKassini[0] << IntPoint(i * scale_helper, 3 * scale_helper);
+	}
+
+	OvalKassini[0] << IntPoint(3 * scale_helper, 3 * scale_helper);
+	for (double i = 3 - 6.0 / 100.0; i > -3; i -= 6.0 / 100.0)
+	{
+		OvalKassini[0] << IntPoint(3 * scale_helper, i * scale_helper);
+	}
+
+	OvalKassini[0] << IntPoint(3 * scale_helper, -3 * scale_helper);
+	for (double i = 3 - 6.0 / 100.0; i > -3; i -= 6.0 / 100.0)
+	{
+		OvalKassini[0] << IntPoint(i * scale_helper, -3 * scale_helper);
+	}
+
+	OvalKassini[0] << IntPoint(-3 * scale_helper, -3 * scale_helper);
+	for (double i = -3 + 6.0 / 100.0; i < 3; i += 6.0 / 100.0)
+	{
+		OvalKassini[0] << IntPoint(-3 * scale_helper, i * scale_helper);
+	}
 }
 
 void CStripsDlg::rotate_and_move_oval()
@@ -557,7 +609,7 @@ double init_value_y_rotated;
 
 IntPoint center;
 
-double RadiusOfBlock = 2;
+
 
 void CStripsDlg::add_net()
 {
@@ -1028,9 +1080,9 @@ void CStripsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
 {
 	CSliderCtrl *pSlider = reinterpret_cast<CSliderCtrl*>(pScrollBar);
 
-	if (pSlider == &XPosition || pSlider == &YPosition || pSlider == &AngleRotation || pSlider == &ScaleOfOval) {
-		add_intersec_oval_and_net();
+	if (pSlider == &XPosition || pSlider == &YPosition || pSlider == &AngleRotation || pSlider == &ScaleOfOval) {		
 		rotate_and_move_oval();
+		add_intersec_oval_and_net();
 	}
 
 	draw_everything();
@@ -1194,28 +1246,30 @@ void CStripsDlg::analysis_and_remove_excess_blocks()
 	bool SuchAlreadyHere = false;
 
 	std::vector<int> DeleteBlock; // ID блока из массива CoveredNet, который нужно удалить из покрытия
-	for (int i = 0; i < CrossedBlocksInfo.size() - 1; i++)
-	{
-		for (int j = i + 1; j < i + CrossedDots[0][CrossedBlocksInfo[i].BlockID].size(); j++)
+	if (CrossedBlocksInfo.size() > 0) {
+		for (int i = 0; i < CrossedBlocksInfo.size() - 1; i++)
 		{
-			if ((CrossedBlocksInfo[i].BlockID == CrossedBlocksInfo[j].BlockID)
-					&& (CrossedBlocksInfo[i].NearestID == CrossedBlocksInfo[j].NearestID))
+			for (int j = i + 1; j < i + CrossedDots[0][CrossedBlocksInfo[i].BlockID].size(); j++)
 			{
-				for (int k = 0; k < DeleteBlock.size(); k++)
+				if ((CrossedBlocksInfo[i].BlockID == CrossedBlocksInfo[j].BlockID)
+					&& (CrossedBlocksInfo[i].NearestID == CrossedBlocksInfo[j].NearestID))
 				{
-					if (DeleteBlock[k] == CrossedBlocksInfo[i].BlockID)
+					for (int k = 0; k < DeleteBlock.size(); k++)
 					{
-						SuchAlreadyHere = true;
-						break;
+						if (DeleteBlock[k] == CrossedBlocksInfo[i].BlockID)
+						{
+							SuchAlreadyHere = true;
+							break;
+						}
 					}
-				}
-				if (SuchAlreadyHere)
-				{
-					SuchAlreadyHere = false;
-				}
-				else
-				{
-					DeleteBlock.push_back(CrossedBlocksInfo[i].BlockID);
+					if (SuchAlreadyHere)
+					{
+						SuchAlreadyHere = false;
+					}
+					else
+					{
+						DeleteBlock.push_back(CrossedBlocksInfo[i].BlockID);
+					}
 				}
 			}
 		}
