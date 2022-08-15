@@ -9,6 +9,17 @@
 
 #include <vector>
 
+using namespace std;
+using namespace ClipperLib;
+
+void draw_object(vector<Path> object);
+
+typedef struct
+{
+	double x;
+	double y;
+} doublePoint;
+
 // CStripsDlg dialog
 class CStripsDlg : public CDialogEx
 {
@@ -38,8 +49,8 @@ protected:
 public:
 	afx_msg void add_net();
 	afx_msg void draw_everything();
-	afx_msg void add_oval();
-	afx_msg void add_intersec_oval_and_net();
+	afx_msg void add_figure();
+	afx_msg void add_intersec_figure_and_net();
 	CSliderCtrl XPosition;
 	CSliderCtrl YPosition;
 	afx_msg void OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
@@ -49,25 +60,15 @@ public:
 	CEdit NumOfCoveredBlocks;
 
 	//////////////////////////////////////   Объявления функций   ///////////////////////////////////////
-	void add_block(double init_value_x, double init_value_y, double step_value_x, double step_value_y);//
+	void add_block(double init_value_x, double init_value_y, double step_value_x, double step_value_y);
 
-	double count_nearest_distance(std::vector<Paths> net_block, int num_of_block, int num_of_dot);//
+	vector<Path> CStripsDlg::do_clip_action(vector<Path> who_clip, vector<Path> who_clipped, ClipType clip_action, int num_of_who_clip = 0, int num_of_who_clipped = 0);
 
-	std::vector<Path> do_intersectrion(std::vector<Paths> who_clip, int num_of_path, std::vector<Path> who_clipped);
-
-	std::vector<Path> do_intersectrion(std::vector<Path> who_clip, std::vector<Path> who_clipped);
-
-	std::vector<Path> do_xor(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped);
-
-	std::vector<Path> do_union(std::vector<Paths> who_clip, int num_of_path, std::vector<Path> who_clipped);
-
-	double check_for_empty_ints(std::vector<Path> who_clip, std::vector<Path> who_clipped);
-
-	void CStripsDlg::rotate_and_move_oval();
+	void CStripsDlg::rotate_and_move_figure();
 
 	void CStripsDlg::rotate_and_move_net(double init_value_x, double init_value_y, double ref_x, double ref_y, double Angle);
 
-	void set_slider(CSliderCtrl& slider, int position, int divide_position, CEdit& value);
+	void CStripsDlg::set_editcontrol(double value, CEdit& window);
 
 	void remove_excess_blocks();
 
@@ -82,6 +83,10 @@ public:
 	void create_oval_cassini();
 
 	void create_square();
+
+	void create_triangle();
+
+	void create_eight();
 
 	afx_msg void do_check_all_positions();
 	CEdit CurrXPos;
@@ -99,9 +104,15 @@ public:
 	afx_msg void OnBnClickedCheck2();
 	afx_msg void OnBnClickedCheck3();
 	afx_msg void OnBnClickedCheck4();
-	afx_msg void OnBnClickedCheck5();
 	afx_msg void OnBnClickedCheck6();
-	CButton EnableOptionDraw;
-	afx_msg void OnBnClickedCheck7();
 	CComboBox FigureType;
+	CButton CheckRemoveExcess;
+	afx_msg void OnBnClickedCheck9();
+	CSliderCtrl NetXRefSlider;
+	CSliderCtrl NetYRefSlider;
+	CSliderCtrl NetAngleSlider;
+	CButton CheckRotateNet;
+	afx_msg void OnBnClickedCheck10();
+	CSliderCtrl ScaleDrawingSlider;
+	afx_msg void OnBnClickedCheck7();
 };

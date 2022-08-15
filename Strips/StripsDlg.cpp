@@ -11,7 +11,70 @@
 #define new DEBUG_NEW
 #endif
 
-using namespace ClipperLib;
+////////////////////////////////////// Глобальные переменные  ///////////////////////////////////////
+
+double RadiusOfBlock = 0.5; // радиус круглого блока сетки
+CRect RedrawArea; // область перерисовки
+int scale_helper = 1e6; // коэф. для коннектной работы библиотеки clipper, которая понимает только целые числа (int)
+						   // пример: sqrt(2)*1e6 = 1.414213*1e6 = 1414213 - итоговое число в расчете пересечений. 
+int window_center_x = 0; // координаты центра области перерисовки
+int window_center_y = 0;
+int scale_drawing = 20; // коэф. для более крупной отрисовки
+
+int SliderLimit = 5; // диапазон для слайдеров X и Y
+int AngleSliderCoef = 1; // коэф. для слайдера углов. Если хотим не целые углы, то > 1.
+
+vector<Paths> Net(1); // сетка покрытия
+vector<Path> Block(1); // отдельный блок сетки
+vector<Paths> CoveredNet(1); // только те элементы сетки, которые покрывают фигуру (овал)
+vector<Paths> Figure(1); // изначальный в начале координат. На его основании поворачиваем и двигаем
+vector<Paths> RotatedAndMovedFigure(1);
+vector<Paths> Intersections(1);
+
+vector<Paths> CrossedDots(1); // точки пересечения блока и фигуры (овала)
+vector<IntPoint> CentersOfBlocks; // центры всех блоков сетки
+vector<IntPoint> CentersOfCoveredBlocks; // центры блоков, покрывающих фигуру (овал
+
+vector<Path> AnalysingHausDistPoints(1); // все точки, для которых будет посчитано кратчайшее расстояние до фигуры (овала)
+
+double FigureXMax = 0; // граничные значения фигуры (овала)
+double FigureYMax = 0;
+
+int SliderCoreff = 1; // коэффициент для настройки диапазона слайдера. 1 - для кругов, 2 - дял квадратов
+double BlockArea = 0; // площадь одного блока сетки
+
+double init_value_x_rotated = 0, init_value_y_rotated = 0; //вспомогательные переменные на случай вращения сетки
+double HausDist = 0; // указываем расстояние, которое точно меньше минимального
+
+typedef struct
+{
+	int BlockID; // номер покрывающего блока в массиве CoveredNet
+	int DotID; // номер точки пересечения с овалом Каасини
+	int NearestID; // номер ближайшего блока в массиве CoveredNet
+} InfoOFBlockCrossedOval;
+
+vector<InfoOFBlockCrossedOval> CrossedBlocksInfo; // необходимая информация о блоках сетки, покрывающих фигуру (овал)
+
+// чтобы рисовать объекты типа Clipperlib::vector<Path> их надо превартить в структуры типа POINT
+POINT ** StructureForDrawPaths;
+POINT * StructureForDrawPath;
+
+CPen blackpen(PS_SOLID, 1, RGB(0, 0, 0));
+CPen redpen(PS_SOLID, 1, RGB(255, 0, 0));
+CPen bluepen(PS_SOLID, 1, RGB(0, 0, 255));
+CPen greenpen(PS_SOLID, 1, RGB(0, 255, 0));
+
+int XHaus = 0; // какая точка соответствует Хаусдорфовому расстоянию
+int YHaus = 0;
+
+IntPoint OvalHausPrev; // предварительная точка на овале Кассини, соответствующая расстоянию Хаусдорфа
+IntPoint OvalHaus; // точка на овале Кассини, соответствующая расстоянию Хаусдорфа
+
+// площади пересечения элементов сетки и овала Кассини (size = Net[0].size())
+vector<double> Areas;
+vector<double> CoveredsAreas;
+
+vector<Paths> CheckedDots_new(1);
 
 // CAboutDlg dialog used for App About
 
@@ -45,10 +108,7 @@ void CAboutDlg::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
 END_MESSAGE_MAP()
 
-
 // CStripsDlg dialog
-
-
 
 CStripsDlg::CStripsDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_STRIPS_DIALOG, pParent)
@@ -70,14 +130,18 @@ void CStripsDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_COMBO1, Regime);
 	DDX_Control(pDX, IDC_SLIDER4, ScaleOfOval);
 	DDX_Control(pDX, IDC_COMBO2, NetType);
-	DDX_Control(pDX, IDC_CHECK1, do_ints);
 	DDX_Control(pDX, IDC_CHECK2, EnableDrawNet);
 	DDX_Control(pDX, IDC_CHECK3, EnableDrawOval);
 	DDX_Control(pDX, IDC_CHECK4, EnableDrawInts);
-	DDX_Control(pDX, IDC_CHECK5, EnableDrawDots);
 	DDX_Control(pDX, IDC_CHECK6, EnableDrawHausDot);
-	DDX_Control(pDX, IDC_CHECK7, EnableOptionDraw);
 	DDX_Control(pDX, IDC_COMBO3, FigureType);
+	DDX_Control(pDX, IDC_CHECK9, CheckRemoveExcess);
+	DDX_Control(pDX, IDC_SLIDER5, NetXRefSlider);
+	DDX_Control(pDX, IDC_SLIDER6, NetYRefSlider);
+	DDX_Control(pDX, IDC_SLIDER7, NetAngleSlider);
+	DDX_Control(pDX, IDC_CHECK10, CheckRotateNet);
+	DDX_Control(pDX, IDC_SLIDER8, ScaleDrawingSlider);
+	DDX_Control(pDX, IDC_CHECK7, EnableDrawDots);
 }
 
 BEGIN_MESSAGE_MAP(CStripsDlg, CDialogEx)
@@ -86,55 +150,21 @@ BEGIN_MESSAGE_MAP(CStripsDlg, CDialogEx)
 	ON_WM_QUERYDRAGICON()
 	ON_BN_CLICKED(IDC_BUTTON1, &CStripsDlg::add_net)
 	ON_BN_CLICKED(IDC_BUTTON2, &CStripsDlg::draw_everything)
-	ON_BN_CLICKED(IDC_BUTTON3, &CStripsDlg::add_oval)
-	ON_BN_CLICKED(IDC_BUTTON4, &CStripsDlg::add_intersec_oval_and_net)
+	ON_BN_CLICKED(IDC_BUTTON3, &CStripsDlg::add_figure)
+	ON_BN_CLICKED(IDC_BUTTON4, &CStripsDlg::add_intersec_figure_and_net)
 	ON_WM_HSCROLL()
 	ON_BN_CLICKED(IDC_BUTTON5, &CStripsDlg::find_haus_dist)
 	ON_BN_CLICKED(IDC_BUTTON6, &CStripsDlg::do_check_all_positions)
 	ON_BN_CLICKED(IDC_CHECK2, &CStripsDlg::OnBnClickedCheck2)
 	ON_BN_CLICKED(IDC_CHECK3, &CStripsDlg::OnBnClickedCheck3)
 	ON_BN_CLICKED(IDC_CHECK4, &CStripsDlg::OnBnClickedCheck4)
-	ON_BN_CLICKED(IDC_CHECK5, &CStripsDlg::OnBnClickedCheck5)
 	ON_BN_CLICKED(IDC_CHECK6, &CStripsDlg::OnBnClickedCheck6)
+	ON_BN_CLICKED(IDC_CHECK9, &CStripsDlg::OnBnClickedCheck9)
+	ON_BN_CLICKED(IDC_CHECK10, &CStripsDlg::OnBnClickedCheck10)
 	ON_BN_CLICKED(IDC_CHECK7, &CStripsDlg::OnBnClickedCheck7)
 END_MESSAGE_MAP()
 
-
 // CStripsDlg message handlers
-
-Clipper cp;
-std::vector<Path> CurrInts(1); // внутренний (для общей функции пересечения) промежуточный результат
-								// для функции пересечения (чтобы каждый раз не объявлять новый)
-std::vector<Path> CurrXor(1);
-std::vector<Path> CurrUnion(1);
-std::vector<Path> CurrentIntersection(1); // внешний промежуточный результат (для конкретной функции).
-											//Можно было бы и без него, но так код читабельнее
-double RadiusOfBlock = 1;
-CRect RedrawArea;
-
-// масштаб для рисования. Оптимальное значение - 20. Изменение сетки будем имитировать изменением размеров овала Кассини
-// для этого будем "играться" с масштабом отрисовки.
-double scale_2 = 5 / 1;
-double scale_1 = 100;
-int scale = scale_1 / scale_2;
-
-// чтобы не потерять точность
-int scale_helper = 100000;
-
-int window_center_x = 0;
-int window_center_y = 0;
-
-/////////////// параметры блоков сетки /////////////////
-double w = 0; // шаг между центрами соседних блоков по гризонтали
-double h = 0; // шаг между центрами соседних блоков по вертикали
-
-double l = 1; // длина стороны правильного многоугольника блока
-
-
-int SliderLimit = 5; // диапазон для слайдеров X и Y
-int AngleSliderCoef = 1;
-
-CString TextForCtrl = _T("");
 
 BOOL CStripsDlg::OnInitDialog()
 {
@@ -167,17 +197,17 @@ BOOL CStripsDlg::OnInitDialog()
 		ScaleOfOval.SetRange(1, 7, 1);
 		ScaleOfOval.SetPos(5);
 
-		RedrawArea.SetRect(window_center_x - 10 * scale, window_center_y - 10 * scale, window_center_x + 10 * scale, window_center_y + 10 * scale);
-		set_drawing_param(window_center_x, window_center_y, scale, scale_helper);
+		RedrawArea.SetRect(window_center_x - 10 * scale_drawing, window_center_y - 10 * scale_drawing, window_center_x + 10 * scale_drawing, window_center_y + 10 * scale_drawing);
+		set_drawing_param(window_center_x, window_center_y, scale_drawing, scale_helper);
 
 		XPosition.SetRange(-SliderLimit, SliderLimit, 1);
-		XPosition.SetPos(0); //1
+		XPosition.SetPos(0); //0
 
 		YPosition.SetRange(-SliderLimit, SliderLimit, 1);
-		YPosition.SetPos(5); //5
+		YPosition.SetPos(0); //5
 
 		AngleRotation.SetRange(0, 360 * AngleSliderCoef, 1);
-		AngleRotation.SetPos(41); //53
+		AngleRotation.SetPos(0); //41
 
 		Regime.AddString(_T("1. Хаусдорфово расстояние"));
 		Regime.AddString(_T("2. Число блоков"));
@@ -188,17 +218,30 @@ BOOL CStripsDlg::OnInitDialog()
 		NetType.AddString(_T("4. Описанные окружности (4)"));
 		NetType.SetCurSel(3); // задаем значение по умолчанию, чтобы сразу был выбран первый вариант (квадраты)
 
-		do_ints.SetCheck(1);
+		CheckRemoveExcess.SetCheck(1);
 
 		EnableDrawNet.SetCheck(0);
 		EnableDrawOval.SetCheck(1);
 		EnableDrawInts.SetCheck(1);
-		EnableDrawDots.SetCheck(0);
-		EnableDrawHausDot.SetCheck(1);
+		//EnableDrawDots.SetCheck(0);
+		//EnableDrawHausDot.SetCheck(1);
 
 		FigureType.AddString(_T("1. Овал Кассини"));
 		FigureType.AddString(_T("2. Квадрат"));
-		FigureType.SetCurSel(1);
+		FigureType.AddString(_T("3. Треугольник"));
+		FigureType.AddString(_T("4. Восьмерка"));
+		FigureType.SetCurSel(3);
+
+		CheckRotateNet.SetCheck(0);
+		NetXRefSlider.SetRange(-RadiusOfBlock * SliderLimit, RadiusOfBlock * SliderLimit, 1);
+		NetYRefSlider.SetRange(-RadiusOfBlock * SliderLimit, RadiusOfBlock * SliderLimit, 1);
+		NetAngleSlider.SetRange(0, 360, 1);
+		NetXRefSlider.EnableWindow(0);
+		NetYRefSlider.EnableWindow(0);
+		NetAngleSlider.EnableWindow(0);
+
+		ScaleDrawingSlider.SetRange(scale_drawing - 10, scale_drawing + 30, 1);
+		ScaleDrawingSlider.SetPos(scale_drawing);
 	}
 
 	// Set the icon for this dialog.  The framework does this automatically
@@ -227,57 +270,6 @@ void CStripsDlg::OnSysCommand(UINT nID, LPARAM lParam)
 // If you add a minimize button to your dialog, you will need the code below
 //  to draw the icon.  For MFC applications using the document/view model,
 //  this is automatically done for you by the framework.
-
-std::vector<Paths> Net(1); // сетка покрытия
-std::vector<Paths> CoveredNet(1); // только те элементы сетки, которые покрывают овал
-
-std::vector<Paths> NetRotated(1);
-
-std::vector<Path> OvalKassini(1); // изначальный в начале координат. На его основании поворачиваем и двигаем
-std::vector<Path> RotatedAndMovedOvalKassini(1);
-std::vector<Paths> Intersections(1);
-std::vector<Paths> DotsOfCurrBlock(1);
-
-std::vector<Paths> xors(1); // differences
-
-std::vector<Paths> Segments(1);
-
-std::vector<Paths> CrossedDots(1);
-
-std::vector<Paths> AllDots(1);
-
-std::vector<Path> Block(1);
-
-std::vector<IntPoint> CentersOfBlocks;
-std::vector<IntPoint> CentersOfCoveredBlocks;
-
-std::vector<Path> CurrentResult(1);
-
-int DotsOnEdge = 0; // число точек на грани блкоа сетки
-
-// чтобы рисовать объекты типа Clipperlib::vector<Path> их надо превартить в структуры типа POINT
-POINT ** StructureForDrawPaths;
-POINT * StructureForDrawPath;
-
-CPen blackpen(PS_SOLID, 1, RGB(0, 0, 0));
-CPen redpen(PS_SOLID, 1, RGB(255, 0, 0));
-CPen bluepen(PS_SOLID, 1, RGB(0, 0, 255));
-CPen greenpen(PS_SOLID, 1, RGB(0, 255, 0));
-
-int XHaus = 0; // какая точка соответствует Хаусдорфовому расстоянию
-int YHaus = 0;
-
-int XOvalHausPrev = 0; // точка на овале Кассини, соответствующая расстоянию Хаусдорфа
-int YOvalHausPrev = 0;
-
-int XOvalHaus = 0; // точка на овале Кассини, соответствующая расстоянию Хаусдорфа
-int YOvalHaus = 0; // точка на овале Кассини, соответствующая расстоянию Хаусдорфа
-
-// площади пересечения элементов сетки и овала Кассини (size = Net[0].size())
-vector<double> Areas;
-vector<double> CoveredsAreas;
-
-std::vector<Paths> CheckedDots_new(1);
 
 void CStripsDlg::OnPaint()
 {
@@ -332,92 +324,67 @@ void CStripsDlg::OnPaint()
 			}
 		}
 
-		// рисуем овал Кассини
+		// рисуем фигуру (овал)
 		if (EnableDrawOval.GetCheck() == 1) {
-			dc.SelectObject(redpen);
-			if (RotatedAndMovedOvalKassini[0].size() > 0)
+			dc.SelectObject(redpen);		
+			if (RotatedAndMovedFigure[0].size() > 0)
 			{
-				StructureForDrawPath = make_structure_for_draw(StructureForDrawPath, RotatedAndMovedOvalKassini);
-				dc.Polyline(StructureForDrawPath, RotatedAndMovedOvalKassini[0].size());
+				StructureForDrawPaths = make_structure_for_draw(StructureForDrawPaths, RotatedAndMovedFigure);
+				for (int i = 0; i < RotatedAndMovedFigure[0].size(); i++) {
+					for (int j = 0; j < RotatedAndMovedFigure[0][i].size() - 1; j++) {
+						dc.MoveTo(StructureForDrawPaths[i][j]);
+						dc.LineTo(StructureForDrawPaths[i][j + 1]);
+					}
+				}
 			}
 		}
+		//if (EnableDrawOval.GetCheck() == 1) {
+		//	dc.SelectObject(redpen);
+		//	if (RotatedAndMovedFigure[0].size() > 0)
+		//	{
+		//		StructureForDrawPath = make_structure_for_draw(StructureForDrawPath, RotatedAndMovedFigure);
+		//		dc.Polyline(StructureForDrawPath, RotatedAndMovedFigure[0].size());
+
+		//		dc.MoveTo(StructureForDrawPath[RotatedAndMovedFigure[0].size() - 1]); // замыкаем
+		//		dc.LineTo(StructureForDrawPath[0]);
+		//	}
+		//}
 
 		// рисуем ближайшую точку
 		if (EnableDrawHausDot.GetCheck() == 1) {
 			dc.SelectObject(redpen);
 			if (Net[0].size() > 0) {
-				dc.Ellipse(window_center_x + (scale * XHaus / scale_helper) - 3,
-					window_center_y - (scale * YHaus / scale_helper) - 3,
-					window_center_x + (scale * XHaus / scale_helper) + 3,
-					window_center_y - (scale * YHaus / scale_helper) + 3);
+				dc.Ellipse(window_center_x + (scale_drawing * XHaus / scale_helper) - 3,
+					window_center_y - (scale_drawing * YHaus / scale_helper) - 3,
+					window_center_x + (scale_drawing * XHaus / scale_helper) + 3,
+					window_center_y - (scale_drawing * YHaus / scale_helper) + 3);
 
 				// и само расстояние Хаусдорфа
-				dc.MoveTo(window_center_x + (scale * XHaus / scale_helper),
-					window_center_y - (scale * YHaus / scale_helper));
-				dc.LineTo(window_center_x + (scale * XOvalHaus / scale_helper),
-					window_center_y - (scale * YOvalHaus / scale_helper));
+				dc.MoveTo(window_center_x + (scale_drawing * XHaus / scale_helper),
+					window_center_y - (scale_drawing * YHaus / scale_helper));
+				dc.LineTo(window_center_x + (scale_drawing * OvalHaus.X / scale_helper),
+					window_center_y - (scale_drawing * OvalHaus.Y / scale_helper));
 			}
 		}
 
 		// рисуем точки, для которых считаем расстояние хаусдорфа
-		if (EnableDrawDots.GetCheck() == 1) {
-			dc.SelectObject(redpen);
-			if (AllDots[0].size() > 0) {
-				for (int i = 0; i < AllDots[0].size(); i++) {
-					dc.Ellipse(window_center_x + (scale * AllDots[0][i][0].X / scale_helper) - 3,
-						window_center_y - (scale * AllDots[0][i][0].Y / scale_helper) - 3,
-						window_center_x + (scale * AllDots[0][i][0].X / scale_helper) + 3,
-						window_center_y - (scale * AllDots[0][i][0].Y / scale_helper) + 3);
-					//Sleep(500);
-				}
-			}
-		}
-
-		//dc.SelectObject(greenpen);
-		//if (CrossedDots[0].size() > 0)
-		//{
-		//	StructureForDrawPaths = make_structure_for_draw(StructureForDrawPaths, CrossedDots);
-		//	for (int i = 0; i < CrossedDots[0].size(); i++) {
-		//		for (int j = 0; j < CrossedDots[0][i].size(); j++) {
-		//			dc.Ellipse(window_center_x + (scale * CrossedDots[0][i][j].X / scale_helper) - 3,
-		//				window_center_y - (scale * CrossedDots[0][i][j].Y / scale_helper) - 3,
-		//				window_center_x + (scale * CrossedDots[0][i][j].X / scale_helper) + 3,
-		//				window_center_y - (scale * CrossedDots[0][i][j].Y / scale_helper) + 3);
-		//		}
-		//	}
-		//}
-
-		if (EnableOptionDraw.GetCheck() == 1)
+		if (EnableDrawDots.GetCheck() == 1)
 		{
 			dc.SelectObject(greenpen);
-			//if (CurrentResult[0].size() > 0)
-			//{
-			//	StructureForDrawPath = make_structure_for_draw(StructureForDrawPath, CurrentResult);
-			//	dc.Polyline(StructureForDrawPath, CurrentResult[0].size());
-			//}
-			for (int i = 0; i < CurrentResult[0].size(); i++)
+			for (int i = 0; i < AnalysingHausDistPoints[0].size(); i++)
 			{
-				dc.Ellipse(window_center_x + (scale * CurrentResult[0][i].X / scale_helper) - 3,
-					window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) - 3,
-					window_center_x + (scale * CurrentResult[0][i].X / scale_helper) + 3,
-					window_center_y - (scale * CurrentResult[0][i].Y / scale_helper) + 3);					
+				dc.Ellipse(window_center_x + (scale_drawing * AnalysingHausDistPoints[0][i].X / scale_helper) - 3,
+					window_center_y - (scale_drawing * AnalysingHausDistPoints[0][i].Y / scale_helper) - 3,
+					window_center_x + (scale_drawing * AnalysingHausDistPoints[0][i].X / scale_helper) + 3,
+					window_center_y - (scale_drawing * AnalysingHausDistPoints[0][i].Y / scale_helper) + 3);					
 			}
-			Sleep(300);
-
-			//if (CheckedDots_new[0].size() > 0)
-			//{
-			//	StructureForDrawPaths = make_structure_for_draw(StructureForDrawPaths, CheckedDots_new);
-			//	for (int i = 0; i < CheckedDots_new[0].size(); i++) {
-			//		for (int j = 0; j < CheckedDots_new[0][i].size(); j++) {
-			//			dc.Ellipse(window_center_x + (scale * CheckedDots_new[0][i][j].X / scale_helper) - 3,
-			//				window_center_y - (scale * CheckedDots_new[0][i][j].Y / scale_helper) - 3,
-			//				window_center_x + (scale * CheckedDots_new[0][i][j].X / scale_helper) + 3,
-			//				window_center_y - (scale * CheckedDots_new[0][i][j].Y / scale_helper) + 3);
-			//		}
-			//	}
-			//}
 		}
 	}
+}
+
+void draw_object(vector<Path> object)
+{
+
 }
 
 // The system calls this function to obtain the cursor to display while the user drags
@@ -427,192 +394,260 @@ HCURSOR CStripsDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-//int scale_slider = 20; // так как слайдер принимает только целые занчения
-
-double x_current = 0; // текущие значения точек в заполнении различных массивов
-double y_current = 0; // текущие значения точек в заполнении различных массивов
-
-// создаем овал Кассини
-double a = 1.002 * scale_2; // параметры овала Кассини. "Играемся" масштабом
-double c = 1 * scale_2;
-double xC = sqrt(a * a + c * c);
-double yA = (a * a) / (2 * c);
-
-int N = 2 * ceil(xC);
-
-double XOvalMax = 0; // крайние точки СМЕЩЕННОГО овала Кассини. Для построения оптимальной сетки
-double YOvalMax = 0; // крайние точки СМЕЩЕННОГО овала Кассини. Для построения оптимальной сетки
-
-double XOvalMin = 0; // крайние точки СМЕЩЕННОГО овала Кассини. Для построения оптимальной сетки
-double YOvalMin = 0; // крайние точки СМЕЩЕННОГО овала Кассини. Для построения оптимальной сетки
-
-int SliderCoreff = 1; // коэффициент для настройки диапазона слайдера. 1 - для кругов, 2 - дял квадратов
-
-int NumOfBlocks = 2 * ceil(xC) * 2 * ceil(yA);
-
-void CStripsDlg::add_oval()
+void CStripsDlg::add_figure()
 {
-	XOvalMin = 0;
-	YOvalMin = 0;
-
-	XOvalMax = 0;
-	YOvalMax = 0;
-
-	OvalKassini[0].clear();
+	Figure[0].clear();
 
 	switch (FigureType.GetCurSel())
 	{
-	case 0:
-	{
-		create_oval_cassini();
-	}; break;
-	case 1:
-	{
-		create_square();
+		case 0: create_oval_cassini(); break;
+		case 1: create_square(); break;
+		case 2: create_triangle(); break;
+		case 3: create_eight(); break;
 	}
+	if (Figure[0].size() > 0) rotate_and_move_figure();
+}
+
+void CStripsDlg::create_oval_cassini()
+{
+	double a = 5.5, c = 5;; // параметры овала Кассини
+	double xC = sqrt(a * a + c * c), yA = (a * a) / (2 * c); // граничные точки
+	double x_current = 0, y_current = 0;
+
+	vector<Path> OnePath(1);
+
+	Figure[0].clear();
+
+	FigureXMax = xC;
+	FigureYMax = yA;
+
+	for (x_current = -xC + 0.001; x_current <= xC; x_current += 0.1)
+	{
+		y_current = sqrt(sqrt(a * a * a * a + 4 * c * c * x_current * x_current) - x_current * x_current - c * c);
+		if (y_current >= 0) OnePath[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
 	}
-
-	//for (x_current = -xC + 0.001; x_current <= xC; x_current += 0.1) {
-	//	y_current = sqrt(sqrt(a * a * a * a + 4 * c * c * x_current * x_current) - x_current * x_current - c * c);
-
-	//	if (y_current >= 0) {
-	//		OvalKassini[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
-	//	}
-
-	//	if (x_current > XOvalMax) {
-	//		XOvalMax = x_current;
-	//	}
-
-	//	if (y_current > YOvalMax) {
-	//		YOvalMax = y_current;
-	//	}
-
-	//	if (x_current < XOvalMin) {
-	//		XOvalMin = x_current;
-	//	}
-
-	//	if (y_current < YOvalMin) {
-	//		YOvalMin = y_current;
-	//	}
-
-	//}
 
 	// добавим самую крайнюю точку, чтобы овал не срезался
 	x_current = xC - 0.001;
 	y_current = sqrt(sqrt(a * a * a * a + 4 * c * c * x_current * x_current) - x_current * x_current - c * c);
 
-	if (x_current > XOvalMax) {
-		XOvalMax = x_current;
-	}
-
-	if (y_current > YOvalMax) {
-		YOvalMax = y_current;
-	}
-
-	if (x_current < XOvalMin) {
-		XOvalMin = x_current;
-	}
-
-	if (y_current < YOvalMin) {
-		YOvalMin = y_current;
-	}
-
-	//OvalKassini[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	OnePath[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
 
 	// рисуем нижнюю часть овала Кассини
-	//for (int i = OvalKassini[0].size() - 1; i >= 0; i--) {
-	//	OvalKassini[0] << IntPoint(OvalKassini[0][i].X, -1 * OvalKassini[0][i].Y);
-	//}
+	for (int i = OnePath[0].size() - 1; i >= 0; i--)
+	{
+		OnePath[0] << IntPoint(OnePath[0][i].X, -1 * OnePath[0][i].Y);
+	}
 
-	rotate_and_move_oval();
-
-	// TODO: Add your control notification handler code here
-}
-
-void CStripsDlg::create_oval_cassini()
-{
+	Figure[0].push_back(OnePath[0]);
 }
 
 void CStripsDlg::create_square()
 {
 	// (-3, 3) (3, 3) (3, -3) (-3, -3)
+	double SquareLength = 6.0; // длина стороны квадрата
+	int NumOfDotsInEdge = 100; // число точек на ребре квадрата
 
-	OvalKassini[0] << IntPoint(-3 * scale_helper, 3 * scale_helper);
-	for (double i = -3 + 6.0/100.0; i < 3; i += 6.0/100.0)
+	vector<Path> OnePath(1);
+
+	Figure[0].clear();
+
+	FigureXMax = SquareLength/2;
+	FigureYMax = SquareLength/2;
+
+	OnePath[0] << IntPoint(-SquareLength/2 * scale_helper, SquareLength/2 * scale_helper);
+	for (double i = -SquareLength/2 + SquareLength / NumOfDotsInEdge; i < SquareLength/2; i += SquareLength / NumOfDotsInEdge)
 	{
-		OvalKassini[0] << IntPoint(i * scale_helper, 3 * scale_helper);
+		OnePath[0] << IntPoint(i * scale_helper, SquareLength/2 * scale_helper);
 	}
 
-	OvalKassini[0] << IntPoint(3 * scale_helper, 3 * scale_helper);
-	for (double i = 3 - 6.0 / 100.0; i > -3; i -= 6.0 / 100.0)
+	OnePath[0] << IntPoint(SquareLength/2 * scale_helper, SquareLength/2 * scale_helper);
+	for (double i = SquareLength/2 - SquareLength / NumOfDotsInEdge; i > -SquareLength/2; i -= SquareLength / NumOfDotsInEdge)
 	{
-		OvalKassini[0] << IntPoint(3 * scale_helper, i * scale_helper);
+		OnePath[0] << IntPoint(SquareLength/2 * scale_helper, i * scale_helper);
 	}
 
-	OvalKassini[0] << IntPoint(3 * scale_helper, -3 * scale_helper);
-	for (double i = 3 - 6.0 / 100.0; i > -3; i -= 6.0 / 100.0)
+	OnePath[0] << IntPoint(SquareLength/2 * scale_helper, -SquareLength/2 * scale_helper);
+	for (double i = SquareLength/2 - SquareLength / NumOfDotsInEdge; i > -SquareLength/2; i -= SquareLength / NumOfDotsInEdge)
 	{
-		OvalKassini[0] << IntPoint(i * scale_helper, -3 * scale_helper);
+		OnePath[0] << IntPoint(i * scale_helper, -SquareLength/2 * scale_helper);
 	}
 
-	OvalKassini[0] << IntPoint(-3 * scale_helper, -3 * scale_helper);
-	for (double i = -3 + 6.0 / 100.0; i < 3; i += 6.0 / 100.0)
+	OnePath[0] << IntPoint(-SquareLength/2 * scale_helper, -SquareLength/2 * scale_helper);
+	for (double i = -SquareLength/2 + SquareLength / NumOfDotsInEdge; i < SquareLength/2; i += SquareLength / NumOfDotsInEdge)
 	{
-		OvalKassini[0] << IntPoint(-3 * scale_helper, i * scale_helper);
+		OnePath[0] << IntPoint(-SquareLength/2 * scale_helper, i * scale_helper);
 	}
+
+	Figure[0].push_back(OnePath[0]);
 }
 
-void CStripsDlg::rotate_and_move_oval()
+void CStripsDlg::create_triangle()
 {
-	// смещаем и поворачиваем (оператор поворота: x' = x*cos(alpha) - y*sin(alpha); y'= x*sin(alpha) + y*cos(alpha))
+	doublePoint EdgePoint1, EdgePoint2, EdgePoint3; // вершины треугольника
+	doublePoint currentPoint;
+	int NumOfDotsInEdge = 100; // число точек на ребре треугольника
 
-	RotatedAndMovedOvalKassini[0].clear();
+	vector<Path> OnePath(1);
 
-	for (int i = 0; i < OvalKassini[0].size(); i++)
+	Figure[0].clear();
+
+	EdgePoint1.x = 0;
+	EdgePoint1.y = 3;
+
+	EdgePoint2.x = 1.5*sqrt(3);
+	EdgePoint2.y = -0.5;
+
+	EdgePoint3.x = -1.5*sqrt(3);
+	EdgePoint3.y = -0.5;
+
+	OnePath[0] << IntPoint(EdgePoint1.x * scale_helper, EdgePoint1.y * scale_helper);
+	for (double x = EdgePoint1.x + (EdgePoint2.x - EdgePoint1.x) / NumOfDotsInEdge; x < EdgePoint2.x; x += (EdgePoint2.x - EdgePoint1.x) / NumOfDotsInEdge)
 	{
-		x_current = (OvalKassini[0][i].X * cos(AngleRotation.GetPos()*(PI / 180)) - OvalKassini[0][i].Y * sin(AngleRotation.GetPos()*(PI / 180))) +
-			(XPosition.GetPos() * scale_helper / (SliderCoreff * SliderLimit));
-
-		y_current = (OvalKassini[0][i].X * sin(AngleRotation.GetPos()*(PI / 180)) + OvalKassini[0][i].Y * cos(AngleRotation.GetPos()*(PI / 180))) +
-			(YPosition.GetPos() * scale_helper / (SliderCoreff * SliderLimit));
-
-		RotatedAndMovedOvalKassini[0] << IntPoint(x_current, y_current);
+		currentPoint.x = x;
+		currentPoint.y = (currentPoint.x * (EdgePoint2.y - EdgePoint1.y) - EdgePoint1.x * (EdgePoint2.y - EdgePoint1.y)) / (EdgePoint2.x - EdgePoint1.x) + EdgePoint1.y;
+		OnePath[0] << IntPoint(currentPoint.x * scale_helper, currentPoint.y * scale_helper);
 	}
 
-	TextForCtrl.Format(_T("%.3f"), double(XPosition.GetPos()) / (SliderCoreff * SliderLimit));
-	CurrXPos.SetWindowTextW(TextForCtrl);
+	OnePath[0] << IntPoint(EdgePoint2.x * scale_helper, EdgePoint2.y * scale_helper);
+	for (double x = EdgePoint2.x - (EdgePoint3.x - EdgePoint2.x) / NumOfDotsInEdge; x > EdgePoint3.x; x += (EdgePoint3.x - EdgePoint2.x) / NumOfDotsInEdge)
+	{
+		currentPoint.x = x;
+		currentPoint.y = (currentPoint.x * (EdgePoint3.y - EdgePoint2.y) - EdgePoint2.x * (EdgePoint3.y - EdgePoint2.y)) / (EdgePoint3.x - EdgePoint2.x) + EdgePoint2.y;
+		OnePath[0] << IntPoint(currentPoint.x * scale_helper, currentPoint.y * scale_helper);
+	}
 
-	TextForCtrl.Format(_T("%.3f"), double(YPosition.GetPos()) / (SliderCoreff * SliderLimit));
-	CurrYPos.SetWindowTextW(TextForCtrl);
+	OnePath[0] << IntPoint(EdgePoint3.x * scale_helper, EdgePoint3.y * scale_helper);
+	for (double x = EdgePoint3.x + (EdgePoint1.x - EdgePoint3.x) / NumOfDotsInEdge; x < EdgePoint1.x; x += (EdgePoint1.x - EdgePoint3.x) / NumOfDotsInEdge)
+	{
+		currentPoint.x = x;
+		currentPoint.y = (currentPoint.x * (EdgePoint1.y - EdgePoint3.y) - EdgePoint3.x * (EdgePoint1.y - EdgePoint3.y)) / (EdgePoint1.x - EdgePoint3.x) + EdgePoint3.y;
+		OnePath[0] << IntPoint(currentPoint.x * scale_helper, currentPoint.y * scale_helper);
+	}
 
-	TextForCtrl.Format(_T("%.1f"), double(AngleRotation.GetPos()) / AngleSliderCoef);
-	CurrAnglePos.SetWindowTextW(TextForCtrl);
+	Figure[0].push_back(OnePath[0]);
+}
+
+void CStripsDlg::create_eight()
+{
+	double R = 3.0;
+	double r = R * (sqrt(2) - 1);
+	double a = 1.5;
+
+	double x_current = 0, y_current = 0;
+
+	vector<Path> OnePath(1);
+
+	Figure[0].clear();
+
+	for (double x = -2 * R; x < R * cos(PI / 4) - R; x += 0.1)
+	{
+		x_current = x;
+		y_current = sqrt(pow(R, 2) - pow((x_current + R), 2));
+		OnePath[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	}
+
+	for (double x = R * cos(PI / 4) - R; x < R - R * cos(PI / 4); x += 0.1)
+	{
+		x_current = x;
+		y_current = -1 * sqrt(pow(r, 2) - pow(x_current, 2)) + R;
+		OnePath[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	}
+
+	for (double x = R - R * cos(PI / 4); x <= 2 * R; x += 0.1)
+	{
+		x_current = x;
+		y_current = sqrt(pow(R, 2) - pow((x_current - R), 2));
+		OnePath[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	}
+
+	for (int i = OnePath[0].size() - 1; i >= 0; i--)
+	{
+		OnePath[0] << IntPoint(OnePath[0][i].X, -1 * OnePath[0][i].Y);
+	}
+
+	Figure[0].push_back(OnePath[0]);
+
+	OnePath[0].clear();
+
+	for (double x = -R + (R / a); x >= -R - (R/a); x -= 0.1)
+	{
+		x_current = x;
+		y_current = sqrt(pow((R / a), 2) - pow((x_current + R), 2));
+		if (y_current >= 0) OnePath[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	}
+
+	for (int i = OnePath[0].size() - 1; i >= 0; i--)
+	{
+		OnePath[0] << IntPoint(OnePath[0][i].X, -1 * OnePath[0][i].Y);
+	}
+
+	Figure[0].push_back(OnePath[0]);
+
+	OnePath[0].clear();
+
+	for (double x = R + (R / a); x >= R - (R / a); x -= 0.1)
+	{
+		x_current = x;
+		y_current = sqrt(pow((R / a), 2) - pow((x_current - R), 2));
+		if (y_current >= 0) OnePath[0] << IntPoint(x_current * scale_helper, y_current * scale_helper);
+	}
+
+	for (int i = OnePath[0].size() - 1; i >= 0; i--)
+	{
+		OnePath[0] << IntPoint(OnePath[0][i].X, -1 * OnePath[0][i].Y);
+	}
+
+	Figure[0].push_back(OnePath[0]);
+}
+
+void CStripsDlg::rotate_and_move_figure()
+{
+	// смещаем и поворачиваем (оператор поворота: x' = x*cos(alpha) - y*sin(alpha); y'= x*sin(alpha) + y*cos(alpha))
+	double x_current = 0, y_current = 0;
+
+	std::vector<Path> OnePath(1);
+
+	RotatedAndMovedFigure[0].clear();
+
+	for (int i = 0; i < Figure[0].size(); i++)
+	{
+		for (int j = 0; j < Figure[0][i].size(); j++)
+		{
+			x_current = (Figure[0][i][j].X * cos(AngleRotation.GetPos()*(PI / 180)) - Figure[0][i][j].Y * sin(AngleRotation.GetPos()*(PI / 180))) +
+				(XPosition.GetPos() * scale_helper / (SliderCoreff * SliderLimit));
+
+			y_current = (Figure[0][i][j].X * sin(AngleRotation.GetPos()*(PI / 180)) + Figure[0][i][j].Y * cos(AngleRotation.GetPos()*(PI / 180))) +
+				(YPosition.GetPos() * scale_helper / (SliderCoreff * SliderLimit));
+
+			OnePath[0] << IntPoint(x_current, y_current);
+		}
+		RotatedAndMovedFigure[0].push_back(OnePath[0]);
+		OnePath[0].clear();
+	}	
+
+	set_editcontrol(double(XPosition.GetPos()) / (SliderCoreff * SliderLimit), CurrXPos);
+	set_editcontrol(double(YPosition.GetPos()) / (SliderCoreff * SliderLimit), CurrYPos);
+	set_editcontrol(double(AngleRotation.GetPos()), CurrAnglePos);
 }
 
 // создаем сетку
-
-double init_x = 0;
-double init_y = 0;
-double end_x = 0;
-double end_y = 0;
-
-double step_x = 0;
-double step_y = 0;
-
-double LimitBorder = 0; // для ОДНОКРАТНОГО создания заранее покрывающей сетки для всех позиций и поворотов
-
-double BlockArea = 0;
-
-std::vector<Path> BlockRotated(1);
-double init_value_x_rotated;
-double init_value_y_rotated;
-
-IntPoint center;
-
-
-
 void CStripsDlg::add_net()
 {
+	double w = 0; // шаг между центрами соседних блоков по гризонтали
+	double h = 0; // шаг между центрами соседних блоков по вертикали
+	double l = 1; // длина стороны правильного многоугольника блока
+
+	double init_x = 0, init_y = 0; // начало формирования сетки
+	double end_x = 0, end_y = 0; // конец формирования сетки
+	double step_x = 0, step_y = 0; // шаг между центрами блоков
+
+	double LimitBorder = 0; // для ОДНОКРАТНОГО создания заранее покрывающей сетки для всех позиций и поворотов
+
+	double x_current = 0, y_current = 0;
+
+	int LineCounter = 0;
+
 	Net[0].clear();
 	Areas.clear();
 
@@ -621,182 +656,180 @@ void CStripsDlg::add_net()
 
 	switch (NetType.GetCurSel())
 	{
-	case 0: {
-		w = l;
-		h = l;
-	}; break; // для квадратов (по умолчанию 1 х 1)
-	case 1: {
-		w = l * 3;
-		h = l * sqrt(3) / 2;
-	}; break; // шестиугольник с длиной стороны l (по умолчанию l = 1)
-	case 2: {
-		w = RadiusOfBlock * 3;
-		h = RadiusOfBlock * sqrt(3) / 2;
-	}; break; // описанные круги вокруг шестиугольников
-	case 3: {
-		w = RadiusOfBlock * sqrt(2);
-		h = RadiusOfBlock * sqrt(2);
-	}; break; // описанные круги вокруг квадратов
+		case 0: {
+			w = l;
+			h = l;
+		} break; // для квадратов (по умолчанию 1 х 1)
+		case 1: {
+			w = l * 3;
+			h = l * sqrt(3) / 2;
+		} break; // шестиугольник с длиной стороны l (по умолчанию l = 1)
+		case 2: {
+			w = RadiusOfBlock * 3;
+			h = RadiusOfBlock * sqrt(3) / 2;
+		} break; // описанные круги вокруг шестиугольников
+		case 3: {
+			w = RadiusOfBlock * sqrt(2);
+			h = RadiusOfBlock * sqrt(2);
+		} break; // описанные круги вокруг квадратов
 	}
 
-	LimitBorder = max(abs(XOvalMax), abs(YOvalMax));
+	LimitBorder = max(abs(FigureXMax), abs(FigureYMax));
 	end_x = 0;
 	end_y = 0;
-	while (end_x <= LimitBorder + w)
+	while (end_x <= LimitBorder + w + 3)
 	{
 		end_x += w;
 	}
-	while (end_y <= LimitBorder + h)
+	while (end_y <= LimitBorder + h + 3)
 	{
 		end_y += h;
 	}
+
 	init_x = -1 * end_x;
 	init_y = -1 * end_y;
 
 	step_x = w;
 	step_y = h;
 
-	// координаты начала отрисовки текущего блока
-	x_current = init_x; // используем те же промежуточные переменные current
+	x_current = init_x;
 	y_current = init_y;
 
-	int LineCounter = 0;
-
 	// начинаем рисовать сетку. Начало координат в середине окна
-
 	switch (NetType.GetCurSel())
 	{
-	case 0: {
-		while (y_current < end_y)
-		{
-			add_block(x_current, y_current, step_x, step_y);
-			x_current += step_x;
-			if (x_current > end_x - 1)
+		case 0: {
+			while (y_current < end_y)
 			{
-				x_current = init_x;
-				y_current += step_y;
-			}
-		}
-	}; break; // для квадратов
-	case 1: {
-		LineCounter = 0;
-		while (y_current < end_y)
-		{
-			add_block(x_current, y_current, step_x, step_y);
-			x_current += step_x;
-			if (x_current > end_x - 1)
-			{
-				LineCounter++;
-				if (LineCounter % 2 != 0)
-				{
-					x_current = init_x + 1.5 * RadiusOfBlock;
-				}
-				else
+				add_block(x_current, y_current, step_x, step_y);
+				x_current += step_x;
+				if (x_current > end_x - 1)
 				{
 					x_current = init_x;
+					y_current += step_y;
 				}
-				y_current += step_y;
 			}
-		}
-	}; break;
-	case 2: {
-		LineCounter = 0;
-		while (y_current < end_y)
-		{
-			add_block(x_current, y_current, step_x, step_y);
-			x_current += step_x;
-			if (x_current > end_x)
+		} break; // для квадратов
+		case 1: {
+			LineCounter = 0;
+			while (y_current < end_y)
 			{
-				LineCounter++;
-				if (LineCounter % 2 != 0)
+				add_block(x_current, y_current, step_x, step_y);
+				x_current += step_x;
+				if (x_current > end_x - 1)
 				{
-					x_current = init_x + 1.5 * RadiusOfBlock;
+					LineCounter++;
+					if (LineCounter % 2 != 0)
+					{
+						x_current = init_x + 1.5 * RadiusOfBlock;
+					}
+					else
+					{
+						x_current = init_x;
+					}
+					y_current += step_y;
 				}
-				else
+			}
+		} break;
+		case 2: {
+			LineCounter = 0;
+			while (y_current < end_y)
+			{
+				add_block(x_current, y_current, step_x, step_y);
+				x_current += step_x;
+				if (x_current > end_x)
+				{
+					LineCounter++;
+					if (LineCounter % 2 != 0)
+					{
+						x_current = init_x + 1.5 * RadiusOfBlock;
+					}
+					else
+					{
+						x_current = init_x;
+					}
+					y_current += step_y;
+				}
+			}
+		} break; // для шестиугольников
+		case 3: {
+			while (y_current < end_y)
+			{
+				add_block(x_current, y_current, step_x, step_y);
+				x_current += step_x;
+				if (x_current > end_x)
 				{
 					x_current = init_x;
+					y_current += step_y;
 				}
-				y_current += step_y;
 			}
-		}
-	}; break; // для шестиугольников
-	case 3: {
-		while (y_current < end_y)
-		{
-			add_block(x_current, y_current, step_x, step_y);
-			x_current += step_x;
-			if (x_current > end_x)
-			{
-				x_current = init_x;
-				y_current += step_y;
-			}
-		}
-	}; break;
+		} break;
 	};
-
-	// TODO: Add your control notification handler code here
 }
 
 // создание отдельного блока для сетки
 void CStripsDlg::add_block(double init_value_x, double init_value_y, double step_value_x, double step_value_y)
 {
+	IntPoint center;
+
 	Block[0].clear();
 
 	switch (NetType.GetCurSel())
 	{
-	case 0: {
-		// по часовой стрелке с левого верхнего угла
+	case 0:
+		{
+			// по часовой стрелке с левого верхнего угла
+			int DotsOnBlockEdge = 6;
 
-		// альтернативный вариант
-		//for (int i = 45; i < 360; i += 90) {
-		//	Block[0] << IntPoint((init_value_x + (sqrt(2)/2) * cos(i*PI / 180))*scale_helper, (init_value_y + (sqrt(2) / 2) * sin(i*PI / 180))*scale_helper);
-		//}
+			// верхняя линия
+			Block[0] << IntPoint((init_value_x - 0.5) * scale_helper, (init_value_y - 0.5) * scale_helper);
+			for (int i = 1; i < DotsOnBlockEdge + 1; i++) {
+				Block[0] << IntPoint((init_value_x + (1 / (double(DotsOnBlockEdge) + 1)) * i)* scale_helper, init_value_y * scale_helper);
+			}
 
-		// верхняя линия
-		Block[0] << IntPoint((init_value_x - 0.5) * scale_helper, (init_value_y - 0.5) * scale_helper);
-		for (int i = 1; i < DotsOnEdge + 1; i++) {
-			Block[0] << IntPoint((init_value_x + (1 / (double(DotsOnEdge) + 1)) * i)* scale_helper, init_value_y * scale_helper);
-		}
+			// правая вертикальная линия
+			Block[0] << IntPoint((init_value_x + 0.5) * scale_helper, (init_value_y - 0.5) * scale_helper);
+			for (int i = 1; i < DotsOnBlockEdge + 1; i++) {
+				Block[0] << IntPoint((init_value_x + step_value_y) * scale_helper, (init_value_y - (1 / (double(DotsOnBlockEdge) + 1)) * i) * scale_helper);
+			}
 
-		// правая вертикальная линия
-		Block[0] << IntPoint((init_value_x + 0.5) * scale_helper, (init_value_y - 0.5) * scale_helper);
-		for (int i = 1; i < DotsOnEdge + 1; i++) {
-			Block[0] << IntPoint((init_value_x + step_value_y) * scale_helper, (init_value_y - (1 / (double(DotsOnEdge) + 1)) * i) * scale_helper);
-		}
+			// нижняя линия
+			Block[0] << IntPoint((init_value_x + 0.5) * scale_helper, (init_value_y + 0.5) * scale_helper);
+			for (int i = 1; i < DotsOnBlockEdge + 1; i++) {
+				Block[0] << IntPoint((init_value_x + step_value_x - (1 / (double(DotsOnBlockEdge) + 1)) * i) * scale_helper, (init_value_y - step_value_y) * scale_helper);
+			}
 
-		// нижняя линия
-		Block[0] << IntPoint((init_value_x + 0.5) * scale_helper, (init_value_y + 0.5) * scale_helper);
-		for (int i = 1; i < DotsOnEdge + 1; i++) {
-			Block[0] << IntPoint((init_value_x + step_value_x - (1 / (double(DotsOnEdge) + 1)) * i) * scale_helper, (init_value_y - step_value_y) * scale_helper);
-		}
-
-		// левая линия
-		Block[0] << IntPoint((init_value_x - 0.5) * scale_helper, (init_value_y + 0.5) * scale_helper);
-		for (int i = 1; i < DotsOnEdge + 1; i++) {
-			Block[0] << IntPoint(init_value_x  * scale_helper, (init_value_y - step_value_y + (1 / (double(DotsOnEdge) + 1)) * i) * scale_helper);
-		}
-	}; break; // для квадратов
-	case 1: {
-		for (int i = 0; i < 360; i += 60) {
-			Block[0] << IntPoint((init_value_x + l * cos(i*PI / 180))*scale_helper, (init_value_y + l * sin(i*PI / 180))*scale_helper);
-		}
-	}; break; // для шестиугольников
-	case 2: {
-		for (int i = 0; i < 360; i += 1) {
-			Block[0] << IntPoint((init_value_x + RadiusOfBlock * cos(i*PI / 180))*scale_helper, (init_value_y + RadiusOfBlock * sin(i*PI / 180))*scale_helper);
-		}
-	}; break; // для кругов
-	case 3: {
-		for (int i = 0; i < 360; i += 1) {
-			Block[0] << IntPoint((init_value_x + RadiusOfBlock * cos(i * PI / 180)) * scale_helper, (init_value_y + RadiusOfBlock * sin(i * PI / 180)) * scale_helper);
-		}
-	}; break;
+			// левая линия
+			Block[0] << IntPoint((init_value_x - 0.5) * scale_helper, (init_value_y + 0.5) * scale_helper);
+			for (int i = 1; i < DotsOnBlockEdge + 1; i++) {
+				Block[0] << IntPoint(init_value_x  * scale_helper, (init_value_y - step_value_y + (1 / (double(DotsOnBlockEdge) + 1)) * i) * scale_helper);
+			}
+		} break; // для квадратов
+		case 1:
+		{
+			//for (int i = 0; i < 360; i += 60) {
+			//	Block[0] << IntPoint((init_value_x + l * cos(i*PI / 180))*scale_helper, (init_value_y + l * sin(i*PI / 180))*scale_helper);
+			//}
+		} break; // для шестиугольников
+		case 2:
+		{
+			for (int i = 0; i < 360; i += 1) {
+				Block[0] << IntPoint((init_value_x + RadiusOfBlock * cos(i*PI / 180))*scale_helper, (init_value_y + RadiusOfBlock * sin(i*PI / 180))*scale_helper);
+			}
+		} break; // для кругов
+		case 3:
+		{
+			for (int i = 0; i < 360; i += 1) {
+				Block[0] << IntPoint((init_value_x + RadiusOfBlock * cos(i * PI / 180)) * scale_helper, (init_value_y + RadiusOfBlock * sin(i * PI / 180)) * scale_helper);
+			}
+		} break;
 	};
 
 	init_value_x_rotated = init_value_x;
 	init_value_y_rotated = init_value_y;
 
-	//rotate_and_move_net(init_value_x, init_value_y, sqrt(3)/2, 0,30);
+	if(CheckRotateNet.GetCheck() == 1) rotate_and_move_net(init_value_x, init_value_y,
+						double(-1 * NetXRefSlider.GetPos())/SliderLimit, double(-1 * NetYRefSlider.GetPos()) / SliderLimit, NetAngleSlider.GetPos());
 
 	Net[0].push_back(Block[0]);
 
@@ -807,7 +840,8 @@ void CStripsDlg::add_block(double init_value_x, double init_value_y, double step
 
 void CStripsDlg::rotate_and_move_net(double init_value_x, double init_value_y, double ref_x, double ref_y, double Angle)
 {
-	BlockRotated[0].clear();
+	vector<Path> BlockRotated(1);
+
 	for (int i = 0; i < Block[0].size(); i++) {
 		BlockRotated[0] << IntPoint((Block[0][i].X * cos(Angle * (PI / 180)) - Block[0][i].Y * sin(Angle * (PI / 180))) +
 			((-SliderLimit * ref_x) * scale_helper / (SliderCoreff * SliderLimit)),
@@ -824,16 +858,21 @@ void CStripsDlg::rotate_and_move_net(double init_value_x, double init_value_y, d
 }
 
 // пересекаем овал Кассини и сетку
-void CStripsDlg::add_intersec_oval_and_net()
+void CStripsDlg::add_intersec_figure_and_net()
 {
+	vector<Path> CurrentIntersection(1);
+
 	Intersections[0].clear();
 	CoveredNet[0].clear();
 	CoveredsAreas.clear();
 	CentersOfCoveredBlocks.clear();
 
+	if(Figure[0].size() == 0) add_figure();
+	if(Net[0].size() == 0) add_net();
+
 	for (int i = 0; i < Net[0].size(); i++)
 	{
-		CurrentIntersection = do_intersectrion(Net, i, RotatedAndMovedOvalKassini);
+		CurrentIntersection = do_clip_action(Net[0], RotatedAndMovedFigure[0], ctIntersection, i);
 		if (CurrentIntersection.size() > 0)
 		{
 			Intersections[0].push_back(CurrentIntersection[0]);
@@ -850,276 +889,10 @@ void CStripsDlg::add_intersec_oval_and_net()
 
 	BlockArea = abs(Area(CoveredNet[0][0])) / (scale_helper * scale_helper);
 
-	remove_excess_blocks();
+	if (CheckRemoveExcess.GetCheck() == 1) remove_excess_blocks();
 
-	TextForCtrl.Format(_T("%d"), CoveredNet[0].size());
-	NumOfCoveredBlocks.SetWindowTextW(TextForCtrl);
-
-	// TODO: Add your control notification handler code here
+	set_editcontrol(CoveredNet[0].size(), NumOfCoveredBlocks);
 }
-
-double HausDist = 0; // указываем расстояние, которое точно меньше минимального
-double CurrHausDist = 0;
-
-bool FoundOnAnEdge = false;
-int CountOfAnEdge = 0;
-
-std::vector<Path> CheckedDots(1);
-
-// считаем Хаусдорфово расстояние
-void CStripsDlg::find_haus_dist()
-{
-	double CurrentDistance;
-	double HausDistance = 0;
-	double CurrentNormalLength;
-	double MinNormalLength = 2 * RadiusOfBlock * scale_helper; // 2, потому что полной диаметр окружности - максимальное расстояние
-
-	prepare_points_to_find_Haus();
-
-	for (int i = 0; i < CurrentResult[0].size(); i++)
-	{
-		MinNormalLength = 2 * RadiusOfBlock * scale_helper;
-		for (int j = 0; j < RotatedAndMovedOvalKassini[0].size(); j++)
-		{
-			CurrentNormalLength = sqrt(pow(CurrentResult[0][i].X - RotatedAndMovedOvalKassini[0][j].X, 2)
-				+ pow(CurrentResult[0][i].Y - RotatedAndMovedOvalKassini[0][j].Y, 2));
-			if (CurrentNormalLength < MinNormalLength)
-			{
-				MinNormalLength = CurrentNormalLength;
-
-				XOvalHausPrev = RotatedAndMovedOvalKassini[0][j].X;
-				YOvalHausPrev = RotatedAndMovedOvalKassini[0][j].Y;
-			}
-		}
-
-		CurrentDistance = MinNormalLength; // строка и переменная лишние, но для лучшего понимания
-
-		if (CurrentDistance > HausDist)
-		{
-			HausDist = CurrentDistance;
-
-			XHaus = CurrentResult[0][i].X;
-			YHaus = CurrentResult[0][i].Y;
-
-			XOvalHaus = XOvalHausPrev;
-			YOvalHaus = YOvalHausPrev;
-
-		}
-	}
-
-	HausDist /= scale_helper;
-
-	TextForCtrl.Format(_T("%.4f"), (HausDist / scale_2) * 5);
-	HausdorffDistance.SetWindowTextW(TextForCtrl);
-
-	// TODO: Add your control notification handler code here
-}
-
-
-// ищем минмальное Хаусдорфово расстояние
-void CStripsDlg::do_check_all_positions()
-{
-	do_ints.SetCheck(1);
-
-	double MinHausDist = 20;
-	int count = 0;
-
-	NumOfBlocks = 80;
-
-	// зафиксируем, в каком случае достигается минимальное значение Хаусдорфова расстояния
-	int MinXPos = 0;
-	int MinYPos = 0;
-	int MinAnglePos = 0;
-
-	// для однократного формирования сетки
-	add_oval();
-	add_net();
-
-	for (int i = XPosition.GetRangeMin(); i <= XPosition.GetRangeMax(); i++) {
-		/*if (FoundOnAnEdge == true) {
-			break;
-		}*/
-		XPosition.SetPos(i); // один фиг: он не заполнит edit control-ы, пока циклы не закончатся
-		for (int j = YPosition.GetRangeMin(); j <= YPosition.GetRangeMax(); j++) {
-	/*		if (FoundOnAnEdge == true) {
-				break;
-			}*/
-			YPosition.SetPos(j);
-			//if (sqrt(i * i + j * j) > SliderLimit)
-			//{
-			//	continue;
-			//}
-			for (int k = AngleRotation.GetRangeMin(); k <= 90; k += 1) {
-				//if (FoundOnAnEdge == true) {
-				//	MinXPos = XPosition.GetPos();
-				//	MinYPos = YPosition.GetPos();
-				//	MinAnglePos = AngleRotation.GetPos();
-				//	break;
-				//}
-
-				AngleRotation.SetPos(k);
-
-				rotate_and_move_oval();
-				add_intersec_oval_and_net();
-
-				switch (Regime.GetCurSel()) { // проверяем, что мы сейчас считаем
-				case 0: {
-					find_haus_dist();
-
-					//draw_everything();
-
-					if (HausDist < MinHausDist) {
-						MinHausDist = HausDist;
-
-						MinXPos = XPosition.GetPos();
-						MinYPos = YPosition.GetPos();
-						MinAnglePos = AngleRotation.GetPos();
-					}
-				}; break;
-				case 1:
-				{
-					//draw_everything();
-
-					if (CoveredNet[0].size() < NumOfBlocks) {
-						NumOfBlocks = CoveredNet[0].size();
-
-						MinXPos = XPosition.GetPos();
-						MinYPos = YPosition.GetPos();
-						MinAnglePos = AngleRotation.GetPos();
-					}
-				};
-				}
-			}
-		}
-	}
-
-	// установим подходящие условия
-	set_slider(XPosition, MinXPos, 1, CurrXPos);
-	set_slider(YPosition, MinYPos, 1, CurrYPos);
-	set_slider(AngleRotation, MinAnglePos, 1, CurrAnglePos);
-
-	rotate_and_move_oval();
-	//add_net();
-	add_intersec_oval_and_net();
-	find_haus_dist();
-
-	TextForCtrl.Format(_T("%.4f"), (MinHausDist / scale_2) * 5);
-	HausdorffDistance.SetWindowTextW(TextForCtrl);
-
-	TextForCtrl.Format(_T("%d"), CoveredNet[0].size());
-	NumOfCoveredBlocks.SetWindowTextW(TextForCtrl);
-
-	draw_everything();
-
-	// TODO: Add your control notification handler code here
-}
-
-// ищем кратчайшее расстояния для каждой вершины покрывающего блока сетки
-double MinDistance = 20 * scale_helper; // указываем расстяние, которое точно больше максимального
-double CurrentDistance = 20 * scale_helper;
-
-double CStripsDlg::count_nearest_distance(std::vector<Paths> net_block, int num_of_block, int num_of_dot)
-{
-	MinDistance = 20 * scale_helper;
-	CurrentDistance = 20 * scale_helper;
-
-	for (int i = 0; i < RotatedAndMovedOvalKassini[0].size(); i++) { // i - точки оала Кассини
-		CurrentDistance = sqrt(pow((net_block[0][num_of_block][num_of_dot].X - RotatedAndMovedOvalKassini[0][i].X), 2) +
-			pow((net_block[0][num_of_block][num_of_dot].Y + (0.01 * scale_helper) - RotatedAndMovedOvalKassini[0][i].Y), 2));
-
-		if (CurrentDistance < MinDistance) {
-			MinDistance = CurrentDistance;
-
-			XOvalHausPrev = RotatedAndMovedOvalKassini[0][i].X;
-			YOvalHausPrev = RotatedAndMovedOvalKassini[0][i].Y;
-		}
-	}
-
-	return MinDistance;
-}
-
-// общая функция пересечения
-std::vector<Path> CStripsDlg::do_intersectrion(std::vector<Paths> who_clip, int num_of_path, std::vector<Path> who_clipped)
-{
-	cp.Clear();
-	CurrInts.clear();
-
-	cp.AddPath(who_clip[0][num_of_path], ptSubject, true);
-	cp.AddPath(who_clipped[0], ptClip, true);
-	cp.Execute(ctIntersection, CurrInts, pftNonZero, pftNonZero);
-
-	return CurrInts;
-}
-
-std::vector<Path> CStripsDlg::do_intersectrion(std::vector<Path> who_clip, std::vector<Path> who_clipped)
-{
-	cp.Clear();
-	CurrInts.clear();
-
-	cp.AddPath(who_clip[0], ptSubject, true);
-	cp.AddPath(who_clipped[0], ptClip, true);
-	cp.Execute(ctIntersection, CurrInts, pftNonZero, pftNonZero);
-
-	return CurrInts;
-}
-
-double CStripsDlg::check_for_empty_ints(std::vector<Path> who_clip, std::vector<Path> who_clipped)
-{	
-	if (do_intersectrion(who_clip, who_clipped).size() > 0)
-	{
-		return Area(do_intersectrion(who_clip, who_clipped)[0]);
-	}
-	else
-	{
-		return 0;
-	}
-}
-
-// реагируем на движение слайдера
-void CStripsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
-{
-	CSliderCtrl *pSlider = reinterpret_cast<CSliderCtrl*>(pScrollBar);
-
-	if (pSlider == &XPosition || pSlider == &YPosition || pSlider == &AngleRotation || pSlider == &ScaleOfOval) {		
-		rotate_and_move_oval();
-		add_intersec_oval_and_net();
-	}
-
-	draw_everything();
-
-	// TODO: Add your message handler code here and/or call default
-
-	CDialogEx::OnHScroll(nSBCode, nPos, pScrollBar);
-}
-
-// рисуем все, что создали
-void CStripsDlg::draw_everything()
-{
-	InvalidateRect(RedrawArea, 1);
-	OnPaint();
-
-	// TODO: Add your control notification handler code here
-}
-
-// настраиваем слайдер и поле начения для него
-void CStripsDlg::set_slider(CSliderCtrl& slider, int position, int divide_position, CEdit& value)
-{
-	slider.SetPos(position);
-
-	TextForCtrl.Format(_T("%.2f"), double(position) / divide_position);
-	value.SetWindowTextW(TextForCtrl);
-}
-
-double NativeDistance = RadiusOfBlock * scale_helper;
-//double CurrentDistance;
-typedef struct
-{
-	int BlockID; // номер покрывающего блока в массиве CoveredNet
-	int DotID; // номер точки пересечения с овалом Каасини
-	int NearestID; // номер ближайшего блока в массиве CoveredNet
-} InfoOFBlockCrossedOval;
-
-std::vector<InfoOFBlockCrossedOval> CrossedBlocksInfo;
 
 void CStripsDlg::remove_excess_blocks()
 {
@@ -1130,8 +903,8 @@ void CStripsDlg::remove_excess_blocks()
 
 void CStripsDlg::set_analysing_points()
 {
-	std::vector<Path> EmptyPath(1);
-	std::vector<Path> CurrentPoint(1);
+	vector<Path> EmptyPath(1);
+	vector<Path> CurrentPoint(1);
 	bool WeAreInside;
 
 	CrossedDots[0].clear();
@@ -1145,7 +918,7 @@ void CStripsDlg::set_analysing_points()
 		{
 			for (int j = 0; j < CoveredNet[0][i].size(); j++)
 			{
-				if (abs(PointInPolygon(CoveredNet[0][i][j], RotatedAndMovedOvalKassini[0])))
+				if (abs(PointInPolygon(CoveredNet[0][i][j], RotatedAndMovedFigure[0][0])))
 				{
 					if (j == 0)
 					{
@@ -1184,18 +957,16 @@ void CStripsDlg::set_analysing_points()
 						}
 						WeAreInside = false;
 					}
-
 					CheckedDots_new[0][i].push_back(CoveredNet[0][i][j]); // добавляем точку в реестр
-
 				}
 			}
-			if (((abs(PointInPolygon(CoveredNet[0][i][0], RotatedAndMovedOvalKassini[0]))) && !(WeAreInside)) || // на случай, если переход на
-				!(abs(PointInPolygon(CoveredNet[0][i][0], RotatedAndMovedOvalKassini[0]))) && (WeAreInside))	 // первой и последней точке блока
+			if (((abs(PointInPolygon(CoveredNet[0][i][0], RotatedAndMovedFigure[0][0]))) && !(WeAreInside)) || // на случай, если переход на
+				!(abs(PointInPolygon(CoveredNet[0][i][0], RotatedAndMovedFigure[0][0]))) && (WeAreInside))	 // первой и последней точке блока
 			{
 				CurrentPoint[0] << IntPoint((CoveredNet[0][i][0].X + CoveredNet[0][i][CoveredNet[0][i].size() - 1].X) / 2,
 					(CoveredNet[0][i][0].Y + CoveredNet[0][i][CoveredNet[0][i].size() - 1].Y) / 2);
 			}
-			//if ((CurrDot[0].size() == 1) && !(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedOvalKassini[0])))) // костыль, но пока только так
+			//if ((CurrDot[0].size() == 1) && !(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedFigure[0])))) // костыль, но пока только так
 			//{
 			//	NumToDelete.push_back(i);
 			//}
@@ -1207,17 +978,15 @@ void CStripsDlg::set_analysing_points()
 void CStripsDlg::crossed_dots_nearest_blocks()
 {
 	InfoOFBlockCrossedOval CurrentInfo;
+	double CurrentDistance;
+	double NativeDistance = RadiusOfBlock * scale_helper;
 
 	CrossedBlocksInfo.clear();
 
 	for (int i = 0; i < CoveredNet[0].size(); i++)
 	{
-		if (!(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedOvalKassini[0]))))
+		if (!(abs(PointInPolygon(CentersOfCoveredBlocks[i], RotatedAndMovedFigure[0][0]))))
 		{
-			if (i == 15)
-			{
-				int q = 0;
-			}
 			for (int j = 0; j < CrossedDots[0][i].size(); j++)
 			{
 				for (int k = 0; k < CentersOfCoveredBlocks.size(); k++)
@@ -1245,7 +1014,7 @@ void CStripsDlg::analysis_and_remove_excess_blocks()
 	int DeleteCounter = 0;
 	bool SuchAlreadyHere = false;
 
-	std::vector<int> DeleteBlock; // ID блока из массива CoveredNet, который нужно удалить из покрытия
+	vector<int> DeleteBlock; // ID блока из массива CoveredNet, который нужно удалить из покрытия
 	if (CrossedBlocksInfo.size() > 0) {
 		for (int i = 0; i < CrossedBlocksInfo.size() - 1; i++)
 		{
@@ -1277,21 +1046,66 @@ void CStripsDlg::analysis_and_remove_excess_blocks()
 
 	for (int i = 0; i < DeleteBlock.size(); i++)
 	{
-		CoveredNet[0].erase(std::next(CoveredNet[0].begin(), DeleteBlock[i] - DeleteCounter));
-		CoveredsAreas.erase(std::next(CoveredsAreas.begin(), DeleteBlock[i] - DeleteCounter));
-		CheckedDots_new[0].erase(std::next(CheckedDots_new[0].begin(), DeleteBlock[i] - DeleteCounter));
+		CoveredNet[0].erase(next(CoveredNet[0].begin(), DeleteBlock[i] - DeleteCounter));
+		CoveredsAreas.erase(next(CoveredsAreas.begin(), DeleteBlock[i] - DeleteCounter));
+		CheckedDots_new[0].erase(next(CheckedDots_new[0].begin(), DeleteBlock[i] - DeleteCounter));
 
 		DeleteCounter++;
 	}
 }
 
+// считаем Хаусдорфово расстояние
+void CStripsDlg::find_haus_dist()
+{
+	double CurrentDistance;
+	double HausDistance = 0;
+	double CurrentNormalLength;
+	double MinNormalLength = (2 * RadiusOfBlock + 1) * scale_helper; // 2, потому что полной диаметр окружности - максимальное расстояние
+
+	prepare_points_to_find_Haus();
+
+	for (int i = 0; i < AnalysingHausDistPoints[0].size(); i++)
+	{
+		MinNormalLength = (2 * RadiusOfBlock + 1) * scale_helper;
+		for (int j = 0; j < RotatedAndMovedFigure[0].size(); j++)
+		{
+			CurrentNormalLength = sqrt(pow(AnalysingHausDistPoints[0][i].X - RotatedAndMovedFigure[0][0][j].X, 2)
+				+ pow(AnalysingHausDistPoints[0][i].Y - RotatedAndMovedFigure[0][0][j].Y, 2));
+			if (CurrentNormalLength < MinNormalLength)
+			{
+				MinNormalLength = CurrentNormalLength;
+
+				OvalHausPrev.X = RotatedAndMovedFigure[0][0][j].X;
+				OvalHausPrev.Y = RotatedAndMovedFigure[0][0][j].Y;
+			}
+		}
+
+		CurrentDistance = MinNormalLength; // строка и переменная лишние, но для лучшего понимания
+
+		if (CurrentDistance > HausDist)
+		{
+			HausDist = CurrentDistance;
+
+			XHaus = AnalysingHausDistPoints[0][i].X;
+			YHaus = AnalysingHausDistPoints[0][i].Y;
+
+			OvalHaus.X = OvalHausPrev.X;
+			OvalHaus.Y = OvalHausPrev.Y;
+		}
+	}
+
+	HausDist /= scale_helper;
+
+	set_editcontrol(HausDist, HausdorffDistance);
+}
+
 void CStripsDlg::prepare_points_to_find_Haus()
 {
-	std::vector<Path> CurrRes;
-	std::vector<int> RetryUnion;
+	vector<Path> CurrRes;
+	vector<int> RetryUnion;
 
-	CurrentResult[0].clear();
-	CurrentResult[0] = CoveredNet[0][0];
+	AnalysingHausDistPoints[0].clear();
+	AnalysingHausDistPoints[0] = CoveredNet[0][0];
 
 	//int old = 0;
 
@@ -1302,38 +1116,38 @@ void CStripsDlg::prepare_points_to_find_Haus()
 
 	for (int i = 1; i < CoveredNet[0].size(); i++)
 	{
-		CurrRes = do_union(CoveredNet, i, CurrentResult);
+		CurrRes = do_clip_action(CoveredNet[0], AnalysingHausDistPoints, ctUnion, i);
 		if (CurrRes.size() == 1)
 		{
-			CurrentResult[0] = CurrRes[0];
+			AnalysingHausDistPoints[0] = CurrRes[0];
 		}
 		else
 		{
 			if ((CurrRes.size() > 1) && (CurrRes[1].size() < 360))
 			{
-				CurrentResult[0] = CurrRes[0];
+				AnalysingHausDistPoints[0] = CurrRes[0];
 			}
 			else
 			{
 				RetryUnion.push_back(i);
 			}
 		}
-		//CurrentResult[0] = do_union(CoveredNet, i, CurrentResult)[0];
+		//AnalysingHausDistPoints[0] = do_clip_action(CoveredNet[0], AnalysingHausDistPoints, ctUnion)[0];
 		//draw_everything();
 	}
 
 	for (int i = RetryUnion.size() - 1; i >= 0; i--)
 	{
-		CurrRes = do_union(CoveredNet, RetryUnion[i], CurrentResult);
+		CurrRes = do_clip_action(CoveredNet[0], AnalysingHausDistPoints, ctUnion, RetryUnion[i]);
 		if (CurrRes.size() == 1)
 		{
-			CurrentResult[0] = CurrRes[0];
+			AnalysingHausDistPoints[0] = CurrRes[0];
 		}
 		else
 		{
 			if ((CurrRes.size() > 1) && (CurrRes[1].size() < 360))
 			{
-				CurrentResult[0] = CurrRes[0];
+				AnalysingHausDistPoints[0] = CurrRes[0];
 			}
 			else
 			{
@@ -1342,72 +1156,183 @@ void CStripsDlg::prepare_points_to_find_Haus()
 		}
 		//draw_everything();
 	}
-
-	//int New = CurrentResult[0].size();
+	//int New = AnalysingHausDistPoints[0].size();
 }
 
-std::vector<Path> CStripsDlg::do_xor(std::vector<Path> who_clip, int num, std::vector<Path> who_clipped)
+// ищем минмальное Хаусдорфово расстояние
+void CStripsDlg::do_check_all_positions()
 {
-	cp.Clear();
-	CurrXor.clear();
+	double MinHausDist = (RadiusOfBlock * 2 + 1) * scale_helper;
+	int NumOfBlocks = 0;
 
-	cp.AddPath(who_clip[num], ptSubject, true);
-	cp.AddPath(who_clipped[0], ptClip, true);
-	cp.Execute(ctDifference, CurrXor, pftNonZero, pftNonZero);
+	// зафиксируем, в каком случае достигается минимальное значение Хаусдорфова расстояния
+	int MinXPos = 0;
+	int MinYPos = 0;
+	int MinAnglePos = 0;
 
-	return CurrXor;
+	// для однократного формирования сетки
+	if(Figure[0].size() <= 0) add_figure();
+	if(Net[0].size() <= 0) add_net();
+
+	NumOfBlocks = Net[0].size();
+
+	for (int i = XPosition.GetRangeMin(); i <= XPosition.GetRangeMax(); i++) {
+		XPosition.SetPos(i);
+		for (int j = YPosition.GetRangeMin(); j <= YPosition.GetRangeMax(); j++) {
+			YPosition.SetPos(j);
+			for (int k = 0; k <= 90; k += 1) {
+				AngleRotation.SetPos(k);
+
+				rotate_and_move_figure();
+				add_intersec_figure_and_net();
+
+				switch (Regime.GetCurSel())
+				{ // проверяем, что мы сейчас считаем
+					case 0:
+					{
+						find_haus_dist();
+
+						if (HausDist < MinHausDist) {
+							MinHausDist = HausDist;
+
+							MinXPos = XPosition.GetPos();
+							MinYPos = YPosition.GetPos();
+							MinAnglePos = AngleRotation.GetPos();
+						}
+					} break;
+					case 1:
+					{
+						if (CoveredNet[0].size() < NumOfBlocks) {
+							NumOfBlocks = CoveredNet[0].size();
+
+							MinXPos = XPosition.GetPos();
+							MinYPos = YPosition.GetPos();
+							MinAnglePos = AngleRotation.GetPos();
+						}
+					} break;
+				}
+			}
+		}
+	}
+
+	// установим найденные условия
+	XPosition.SetPos(MinXPos);
+	YPosition.SetPos(MinYPos);
+	AngleRotation.SetPos(MinAnglePos);
+
+	set_editcontrol(double(XPosition.GetPos()) / (SliderCoreff * SliderLimit), CurrXPos);
+	set_editcontrol(double(YPosition.GetPos()) / (SliderCoreff * SliderLimit), CurrYPos);
+	set_editcontrol(double(AngleRotation.GetPos()), CurrAnglePos);
+
+	rotate_and_move_figure();
+	add_intersec_figure_and_net();
+	find_haus_dist();
+
+	EnableDrawOval.SetCheck(1);
+	EnableDrawInts.SetCheck(1);
+	EnableDrawHausDot.SetCheck(1);
+	draw_everything();
 }
 
-std::vector<Path> CStripsDlg::do_union(std::vector<Paths> who_clip, int num_of_path, std::vector<Path> who_clipped)
+vector<Path> CStripsDlg::do_clip_action(vector<Path> who_clip, vector<Path> who_clipped, ClipType clip_action, int num_of_who_clip, int num_of_who_clipped)
 {
 	Clipper cp;
-	std::vector<Path> Result;
+	vector<Path> CurrRes(1);
 
-	cp.AddPath(who_clip[0][num_of_path], ptSubject, true);
-	cp.AddPath(who_clipped[0], ptClip, true);
-	cp.Execute(ctUnion, Result, pftNonZero, pftNonZero);
+	cp.AddPath(who_clip[num_of_who_clip], ptSubject, true);
+	cp.AddPath(who_clipped[num_of_who_clipped], ptClip, true);
+	cp.Execute(clip_action, CurrRes, pftNonZero, pftNonZero);
 
-	return Result;
+	return CurrRes;
 }
 
+// рисуем все, что создали
+void CStripsDlg::draw_everything()
+{
+	InvalidateRect(RedrawArea, 1);
+	OnPaint();
+}
+
+// настраиваем слайдер и поле значения для него
+void CStripsDlg::set_editcontrol(double value, CEdit& window)
+{
+	CString TextForCtrl = _T("");
+
+	TextForCtrl.Format(_T("%.3f"), value);
+	window.SetWindowTextW(TextForCtrl);
+}
+
+// реагируем на движение слайдера
+void CStripsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
+{
+	CSliderCtrl *pSlider = reinterpret_cast<CSliderCtrl*>(pScrollBar);
+
+	if (pSlider == &XPosition || pSlider == &YPosition || pSlider == &AngleRotation || pSlider == &ScaleOfOval)
+	{		
+		rotate_and_move_figure();
+		//add_intersec_figure_and_net();
+	}
+
+	if (pSlider == &NetXRefSlider || pSlider == &NetYRefSlider || pSlider == &NetAngleSlider)
+	{
+		add_net();
+		add_intersec_figure_and_net();
+	}
+
+	if (pSlider == &ScaleDrawingSlider)
+	{
+		scale_drawing = ScaleDrawingSlider.GetPos();
+		set_drawing_param(window_center_x, window_center_y, scale_drawing, scale_helper);
+	}
+
+	draw_everything();
+
+	CDialogEx::OnHScroll(nSBCode, nPos, pScrollBar);
+}
 
 void CStripsDlg::OnBnClickedCheck2()
 {
 	draw_everything();
-	// TODO: Add your control notification handler code here
 }
-
 
 void CStripsDlg::OnBnClickedCheck3()
 {
 	draw_everything();
-	// TODO: Add your control notification handler code here
 }
-
 
 void CStripsDlg::OnBnClickedCheck4()
 {
 	draw_everything();
-	// TODO: Add your control notification handler code here
 }
-
-
-void CStripsDlg::OnBnClickedCheck5()
-{
-	draw_everything();
-	// TODO: Add your control notification handler code here
-}
-
 
 void CStripsDlg::OnBnClickedCheck6()
 {
 	draw_everything();
-	// TODO: Add your control notification handler code here
 }
 
+void CStripsDlg::OnBnClickedCheck9()
+{
+	add_intersec_figure_and_net();
+	draw_everything();
+}
 
 void CStripsDlg::OnBnClickedCheck7()
 {
 	draw_everything();
-	// TODO: Add your control notification handler code here
+}
+
+void CStripsDlg::OnBnClickedCheck10()
+{
+	if (CheckRotateNet.GetCheck() == 1)
+	{
+		NetXRefSlider.EnableWindow(1);
+		NetYRefSlider.EnableWindow(1);
+		NetAngleSlider.EnableWindow(1);
+	}
+	else
+	{
+		NetXRefSlider.EnableWindow(0);
+		NetYRefSlider.EnableWindow(0);
+		NetAngleSlider.EnableWindow(0);
+	}
 }

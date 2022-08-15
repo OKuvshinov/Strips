@@ -24,14 +24,18 @@
 #define IDC_COMBO1                      1014
 #define IDC_SLIDER4                     1015
 #define IDC_COMBO2                      1016
-#define IDC_CHECK1                      1017
 #define IDC_CHECK2                      1018
 #define IDC_CHECK3                      1019
 #define IDC_CHECK4                      1020
-#define IDC_CHECK5                      1021
 #define IDC_CHECK6                      1022
 #define IDC_CHECK7                      1023
 #define IDC_COMBO3                      1024
+#define IDC_CHECK9                      1026
+#define IDC_SLIDER5                     1027
+#define IDC_SLIDER6                     1028
+#define IDC_SLIDER7                     1029
+#define IDC_CHECK10                     1030
+#define IDC_SLIDER8                     1031
 
 // Next default values for new objects
 // 
@@ -39,7 +43,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        130
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1025
+#define _APS_NEXT_CONTROL_VALUE         1032
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

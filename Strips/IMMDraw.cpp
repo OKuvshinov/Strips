@@ -10,7 +10,7 @@ int center_window_y = 0;
 int scale_param = 1;
 int scale_helper_param = 1;
 
-void draw_object(std::vector<Paths> object, CString tool, CString color, CString regime, CPaintDC dc)
+void draw_object(vector<Paths> object, CString tool, CString color, CString regime, CPaintDC dc)
 {
 	if (color == "Black")
 	{
@@ -24,7 +24,7 @@ void draw_object(std::vector<Paths> object, CString tool, CString color, CString
 	//}
 }
 
-POINT * make_structure_for_draw(POINT * structure, std::vector<Path> object)
+POINT * make_structure_for_draw(POINT * structure, vector<Path> object)
 {
 	structure = new POINT[object[0].size()];
 	for (int i = 0; i < object[0].size(); i++) {
@@ -35,7 +35,7 @@ POINT * make_structure_for_draw(POINT * structure, std::vector<Path> object)
 	return structure;
 }
 
-POINT ** make_structure_for_draw(POINT ** structure, std::vector<Paths> object)
+POINT ** make_structure_for_draw(POINT ** structure, vector<Paths> object)
 {
 	delete[] structure;
 
@@ -61,14 +61,14 @@ void set_drawing_param(int center_x, int center_y, int scale_value, int scale_he
 	scale_helper_param = scale_helper_value;
 }
 
-std::vector<Paths> PolyFromDot(1);
-std::vector<Path> NewDot(1);
+vector<Paths> PolyFromDot(1);
+vector<Path> NewDot(1);
 double XForDotPoly = 0;
 double YForDotPoly = 0;
 
 bool ThisDotIsAlreadyChecked = false;
 
-std::vector<Paths> make_polys_for_dots(std::vector<Path> paths, int num_of_path, std::vector<Path> check_dots)
+vector<Paths> make_polys_for_dots(vector<Path> paths, int num_of_path, vector<Path> check_dots)
 {
 	PolyFromDot[0].clear();
 

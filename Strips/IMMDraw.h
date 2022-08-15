@@ -6,12 +6,12 @@ using namespace ClipperLib;
 
 const double PI = 3.141592;
 
-void draw_object(std::vector<Paths> object, CString tool, CString color, CString regime, CPaintDC dc);
+void draw_object(vector<Paths> object, CString tool, CString color, CString regime, CPaintDC dc);
 
-POINT *make_structure_for_draw(POINT *structure, std::vector<Path> object);
+POINT *make_structure_for_draw(POINT *structure, vector<Path> object);
 
-POINT **make_structure_for_draw(POINT **structure, std::vector<Paths> object);
+POINT **make_structure_for_draw(POINT **structure, vector<Paths> object);
 
 void set_drawing_param(int center_x, int center_y, int scale_value, int scale_helper_value);
 
-std::vector<Paths> make_polys_for_dots(std::vector<Path> paths, int num_of_path, std::vector<Path> check_dots);
+vector<Paths> make_polys_for_dots(vector<Path> paths, int num_of_path, vector<Path> check_dots);
