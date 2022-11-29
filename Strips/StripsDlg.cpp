@@ -7,13 +7,16 @@
 #include "StripsDlg.h"
 #include "afxdialogex.h"
 
+#include <iostream>
+#include <fstream>
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
 ////////////////////////////////////// Глобальные переменные  ///////////////////////////////////////
 
-double RadiusOfBlock = 0.5; // радиус круглого блока сетки
+double RadiusOfBlock = 1; // радиус круглого блока сетки
 CRect RedrawArea; // область перерисовки
 int scale_helper = 1e6; // коэф. для коннектной работы библиотеки clipper, которая понимает только целые числа (int)
 						   // пример: sqrt(2)*1e6 = 1.414213*1e6 = 1414213 - итоговое число в расчете пересечений. 
@@ -21,7 +24,7 @@ int window_center_x = 0; // координаты центра области п�
 int window_center_y = 0;
 int scale_drawing = 20; // коэф. для более крупной отрисовки
 
-int SliderLimit = 5; // диапазон для слайдеров X и Y
+int SliderLimit = 50; // диапазон для слайдеров X и Y
 int AngleSliderCoef = 1; // коэф. для слайдера углов. Если хотим не целые углы, то > 1.
 
 vector<Paths> Net(1); // сетка покрытия
@@ -212,11 +215,11 @@ BOOL CStripsDlg::OnInitDialog()
 		Regime.AddString(_T("1. Хаусдорфово расстояние"));
 		Regime.AddString(_T("2. Число блоков"));
 
-		NetType.AddString(_T("1. Квадраты"));
-		NetType.AddString(_T("2. Шестиугольники"));
-		NetType.AddString(_T("3. Описанные окружности (6)"));
-		NetType.AddString(_T("4. Описанные окружности (4)"));
-		NetType.SetCurSel(3); // задаем значение по умолчанию, чтобы сразу был выбран первый вариант (квадраты)
+		NetType.AddString(_T("1. Квадраты")); //0
+		NetType.AddString(_T("2. Шестиугольники")); //1
+		NetType.AddString(_T("3. Описанные окружности (6)")); //2
+		NetType.AddString(_T("4. Описанные окружности (4)")); //3
+		NetType.SetCurSel(2); // задаем значение по умолчанию, чтобы сразу был выбран первый вариант (квадраты)
 
 		CheckRemoveExcess.SetCheck(1);
 
@@ -230,7 +233,7 @@ BOOL CStripsDlg::OnInitDialog()
 		FigureType.AddString(_T("2. Квадрат"));
 		FigureType.AddString(_T("3. Треугольник"));
 		FigureType.AddString(_T("4. Восьмерка"));
-		FigureType.SetCurSel(3);
+		FigureType.SetCurSel(0);
 
 		CheckRotateNet.SetCheck(0);
 		NetXRefSlider.SetRange(-RadiusOfBlock * SliderLimit, RadiusOfBlock * SliderLimit, 1);
@@ -416,8 +419,6 @@ void CStripsDlg::create_oval_cassini()
 
 	vector<Path> OnePath(1);
 
-	Figure[0].clear();
-
 	FigureXMax = xC;
 	FigureYMax = yA;
 
@@ -449,8 +450,6 @@ void CStripsDlg::create_square()
 	int NumOfDotsInEdge = 100; // число точек на ребре квадрата
 
 	vector<Path> OnePath(1);
-
-	Figure[0].clear();
 
 	FigureXMax = SquareLength/2;
 	FigureYMax = SquareLength/2;
@@ -489,8 +488,6 @@ void CStripsDlg::create_triangle()
 	int NumOfDotsInEdge = 100; // число точек на ребре треугольника
 
 	vector<Path> OnePath(1);
-
-	Figure[0].clear();
 
 	EdgePoint1.x = 0;
 	EdgePoint1.y = 3;
@@ -537,8 +534,6 @@ void CStripsDlg::create_eight()
 	double x_current = 0, y_current = 0;
 
 	vector<Path> OnePath(1);
-
-	Figure[0].clear();
 
 	for (double x = -2 * R; x < R * cos(PI / 4) - R; x += 0.1)
 	{
@@ -1060,14 +1055,14 @@ void CStripsDlg::find_haus_dist()
 	double CurrentDistance;
 	double HausDistance = 0;
 	double CurrentNormalLength;
-	double MinNormalLength = (2 * RadiusOfBlock + 1) * scale_helper; // 2, потому что полной диаметр окружности - максимальное расстояние
+	double MinNormalLength = /*(2 * RadiusOfBlock + 1) * scale_helper*/0; // 2, потому что полной диаметр окружности - максимальное расстояние
 
 	prepare_points_to_find_Haus();
 
 	for (int i = 0; i < AnalysingHausDistPoints[0].size(); i++)
 	{
 		MinNormalLength = (2 * RadiusOfBlock + 1) * scale_helper;
-		for (int j = 0; j < RotatedAndMovedFigure[0].size(); j++)
+		for (int j = 0; j < RotatedAndMovedFigure[0][0].size(); j++)
 		{
 			CurrentNormalLength = sqrt(pow(AnalysingHausDistPoints[0][i].X - RotatedAndMovedFigure[0][0][j].X, 2)
 				+ pow(AnalysingHausDistPoints[0][i].Y - RotatedAndMovedFigure[0][0][j].Y, 2));
@@ -1170,17 +1165,26 @@ void CStripsDlg::do_check_all_positions()
 	int MinYPos = 0;
 	int MinAnglePos = 0;
 
+	int start_x = 0, stop_x = 0; //XPosition.GetRangeMin()
+	int start_y = YPosition.GetRangeMin(), stop_y = YPosition.GetRangeMax();
+	int start_ang = 0, stop_ang = 0;
+
+	ofstream write_file;
+	char file_name[50], file_string[10];
+	sprintf(file_name, "[%.1f, %.1f], [%.1f, %.1f], [%d, %d].txt", (float)start_x / SliderLimit, (float)stop_x / SliderLimit, (float)start_y / SliderLimit, (float)stop_y / SliderLimit, start_ang, stop_ang);
+	write_file.open(file_name);
+
 	// для однократного формирования сетки
 	if(Figure[0].size() <= 0) add_figure();
 	if(Net[0].size() <= 0) add_net();
 
 	NumOfBlocks = Net[0].size();
 
-	for (int i = XPosition.GetRangeMin(); i <= XPosition.GetRangeMax(); i++) {
+	for (int i = start_x; i <= stop_x; i++) { // int i = XPosition.GetRangeMin(); i <= XPosition.GetRangeMax(); i++
 		XPosition.SetPos(i);
-		for (int j = YPosition.GetRangeMin(); j <= YPosition.GetRangeMax(); j++) {
+		for (int j = start_y; j <= stop_y; j++) {
 			YPosition.SetPos(j);
-			for (int k = 0; k <= 90; k += 1) {
+			for (int k = start_ang; k <= stop_ang; k += 1) {
 				AngleRotation.SetPos(k);
 
 				rotate_and_move_figure();
@@ -1191,6 +1195,8 @@ void CStripsDlg::do_check_all_positions()
 					case 0:
 					{
 						find_haus_dist();
+						sprintf(file_string, "%.4f %d %.2f %.2f %d\n", HausDist, CoveredNet[0].size(), (float)i / SliderLimit, (float)j / SliderLimit, k);
+						write_file << file_string;
 
 						if (HausDist < MinHausDist) {
 							MinHausDist = HausDist;
@@ -1214,6 +1220,8 @@ void CStripsDlg::do_check_all_positions()
 			}
 		}
 	}
+
+	write_file.close();
 
 	// установим найденные условия
 	XPosition.SetPos(MinXPos);
